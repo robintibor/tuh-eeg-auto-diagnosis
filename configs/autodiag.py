@@ -506,8 +506,13 @@ def run(ex, max_recording_mins, n_recordings,
         model_name, input_time_length, final_conv_length,
         batch_size, max_epochs,
         only_return_exp):
+    kwargs = locals()
+    kwargs.pop('only_return_exp')
+    kwargs.pop('ex')
     start_time = time.time()
     ex.info['finished'] = False
+
+    exp = run_exp(**kwargs)
     exp = run_exp(
         max_recording_mins, n_recordings,
         sec_to_cut, duration_recording_mins, max_abs_val,
