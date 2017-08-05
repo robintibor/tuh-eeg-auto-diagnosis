@@ -49,7 +49,7 @@ def get_grid_param_list():
 
     load_params = [{
         'max_recording_mins': 35,
-        'n_recordings': 10#150
+        'n_recordings': 300,
     }]
 
     clean_params = [
@@ -67,10 +67,10 @@ def get_grid_param_list():
     preproc_params = dictlistprod({
         'sec_to_cut': [60],
         'duration_recording_mins': [3],
-        'max_abs_val': [None],# 800, ],
+        'max_abs_val': [None, 800,],
         'sampling_freq': [100],
-        'low_cut_hz': [None],# 0.1],
-        'high_cut_hz': [None],# 45],
+        'low_cut_hz': [None, 0.1],
+        'high_cut_hz': [None, 45],
     })
 
     standardizing_defaults = {
@@ -105,7 +105,7 @@ def get_grid_param_list():
     ]
 
     standardizing_params = product_of_list_of_lists_of_dicts(
-        [[standardizing_defaults], ])#standardizing_variants
+        [[standardizing_defaults], standardizing_variants])
 
     split_params = [{
         'n_folds': 5,
@@ -129,7 +129,7 @@ def get_grid_param_list():
     }]
 
     stop_params = [{
-        'max_epochs': 3,#35,
+        'max_epochs': 35,
     }]
 
 
@@ -507,28 +507,11 @@ def run(ex, max_recording_mins, n_recordings,
         batch_size, max_epochs,
         only_return_exp):
     kwargs = locals()
-    kwargs.pop('only_return_exp')
     kwargs.pop('ex')
     start_time = time.time()
     ex.info['finished'] = False
 
     exp = run_exp(**kwargs)
-    exp = run_exp(
-        max_recording_mins, n_recordings,
-        sec_to_cut, duration_recording_mins, max_abs_val,
-        max_min_threshold, max_min_expected, shrink_the_spikes,
-        sampling_freq,
-        low_cut_hz, high_cut_hz,
-        exp_demean, exp_standardize,
-        moving_demean, moving_standardize,
-        channel_demean, channel_standardize,
-        n_folds=n_folds,
-        i_test_fold=i_test_fold,
-        model_name=model_name,
-        input_time_length=input_time_length,
-        final_conv_length=final_conv_length,
-        batch_size=batch_size, max_epochs=max_epochs,
-        only_return_exp=only_return_exp)
     end_time = time.time()
     run_time = end_time - start_time
     ex.info['finished'] = True
