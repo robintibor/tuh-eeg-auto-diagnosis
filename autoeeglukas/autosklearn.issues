@@ -1,0 +1,22 @@
+I think the following error message is phrased incorrectly.
+I was using resampling strategy cv and the error then said 'predict is currently only implemented for cv'.
+
+if not self._can_predict and \
+        self._resampling_strategy not in  \
+                ['holdout', 'holdout-iterative-fit']:
+    raise NotImplementedError(
+        'Predict is currently only implemented for resampling '
+        'strategy %s.' % self._resampling_strategy)
+
+
+Why does this happen? Too little time budget?
+'abort_on_first_run_crash'-option!
+
+
+How to get individual CV fold results?
+
+
+How to get the classifier / ensemble?
+
+
+How long to run? Website says 1 day. How about 3 months?!
