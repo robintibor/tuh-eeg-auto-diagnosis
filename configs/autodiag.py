@@ -43,13 +43,13 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/first-try/',
+        'save_folder': './data/models/pytorch/auto-diag/preprocs-more-data/',
         'only_return_exp': False,
     }]
 
     load_params = [{
         'max_recording_mins': 35,
-        'n_recordings': 300,
+        'n_recordings': 1500,
     }]
 
     clean_params = [
@@ -107,10 +107,10 @@ def get_grid_param_list():
     standardizing_params = product_of_list_of_lists_of_dicts(
         [[standardizing_defaults], standardizing_variants])
 
-    split_params = [{
-        'n_folds': 5,
-        'i_test_fold': 4,
-    }]
+    split_params = dictlistprod({
+        'n_folds': [5],
+        'i_test_fold': [2,3,4],
+    })
 
     model_params = [{
         'input_time_length': 1200,
@@ -226,7 +226,9 @@ class DiagnosisSet(object):
 
         X = []
         y = []
+        n_files = len(cleaned_file_names[:self.n_recordings])
         for i_fname, fname in enumerate(cleaned_file_names[:self.n_recordings]):
+            log.info("Load {:d} of {:d}".format(i_fname + 1,n_files))
             x = load_data(fname, preproc_functions=self.preproc_functions)
             assert x is not None
             X.append(x)
