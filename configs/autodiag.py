@@ -43,7 +43,7 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/preprocs-more-data/',
+        'save_folder': './data/models/pytorch/auto-diag/preprocs-with-divide/',
         'only_return_exp': False,
     }]
 
@@ -67,10 +67,11 @@ def get_grid_param_list():
     preproc_params = dictlistprod({
         'sec_to_cut': [60],
         'duration_recording_mins': [3],
-        'max_abs_val': [None, 800,],
+        'max_abs_val': [800,],
         'sampling_freq': [100],
-        'low_cut_hz': [None, 0.1],
-        'high_cut_hz': [None, 45],
+        'low_cut_hz': [None,],
+        'high_cut_hz': [None,],
+        'divisor': [None, 20],
     })
 
     standardizing_defaults = {
@@ -85,22 +86,7 @@ def get_grid_param_list():
     standardizing_variants = [
         {},
         {
-            'exp_demean': True,
-        },
-        {
-            'exp_standardize': True,
-        },
-        {
-            'moving_demean': True,
-        },
-        {
-            'moving_standardize': True,
-        },
-        {
             'channel_demean': True,
-        },
-        {
-            'channel_standardize': True,
         },
     ]
 
@@ -151,7 +137,6 @@ def get_grid_param_list():
 
 def sample_config_params(rng, params):
     return params
-
 
 def load_data(fname, preproc_functions):
     cnt, sfreq, n_samples, n_channels, chan_names, n_sec = get_info_with_mne(
@@ -378,6 +363,7 @@ def run_exp(max_recording_mins, n_recordings,
             exp_demean, exp_standardize,
             moving_demean, moving_standardize,
             channel_demean, channel_standardize,
+            divisor,
             n_folds, i_test_fold,
             model_name,
             input_time_length, final_conv_length,
@@ -431,6 +417,8 @@ def run_exp(max_recording_mins, n_recordings,
         preproc_functions.append(lambda data, fs: (demean(data, axis=1), fs))
     if channel_standardize:
         preproc_functions.append(lambda data, fs: (standardize(data, axis=1), fs))
+    if divisor is not None:
+        preproc_functions.append(lambda data, fs: (data / divisor, fs))
 
     dataset = DiagnosisSet(n_recordings=n_recordings,
                         max_recording_mins=max_recording_mins,
@@ -496,6 +484,18 @@ def run_exp(max_recording_mins, n_recordings,
     return exp
 
 
+def save_torch_artifact(ex, obj, filename):
+    """Uses tempfile and file lock to safely store a pkl object as artefact"""
+    import tempfile
+    import fasteners
+    with tempfile.NamedTemporaryFile(suffix='.pkl') as tmpfile:
+        lockname = tmpfile.name + '.lock'
+        file_lock = fasteners.InterProcessLock(lockname)
+        file_lock.acquire()
+        th.save(obj, open(tmpfile.name, 'wb'))
+        ex.add_artifact(tmpfile.name, filename)
+        file_lock.release()
+
 def run(ex, max_recording_mins, n_recordings,
         sec_to_cut, duration_recording_mins, max_abs_val,
         max_min_threshold, max_min_expected, shrink_the_spikes,
@@ -504,12 +504,16 @@ def run(ex, max_recording_mins, n_recordings,
         exp_demean, exp_standardize,
         moving_demean, moving_standardize,
         channel_demean, channel_standardize,
+        divisor,
         n_folds, i_test_fold,
         model_name, input_time_length, final_conv_length,
         batch_size, max_epochs,
         only_return_exp):
     kwargs = locals()
     kwargs.pop('ex')
+    import sys
+    logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
+                     level=logging.DEBUG, stream=sys.stdout)
     start_time = time.time()
     ex.info['finished'] = False
 
@@ -526,3 +530,4 @@ def run(ex, max_recording_mins, n_recordings,
     if not only_return_exp:
         save_pkl_artifact(ex, exp.epochs_df, 'epochs_df.pkl')
         save_pkl_artifact(ex, exp.before_stop_df, 'before_stop_df.pkl')
+        save_torch_artifact(ex, exp.model.state_dict(), 'model_params.pkl')

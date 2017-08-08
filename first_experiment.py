@@ -114,25 +114,7 @@ in_chans = train_set.X[0].shape[0]
 # final_conv_length determines the size of the receptive field of the ConvNet
 model = ShallowFBCSPNet(in_chans=in_chans, n_classes=n_classes, input_time_length=input_time_length,
                         final_conv_length=20).create_network()
-#model = Deep4Net(in_chans, n_classes, input_time_length=input_time_length,
-#                            final_conv_length=2).create_network()
-to_dense_prediction_model(model)
-log.info("Model:\n{:s}".format(str(model)))
-if cuda:
-    model.cuda()
-
-from torch import optim
-
-optimizer = optim.Adam(model.parameters())
-
-from braindecode.torch_ext.util import np_to_var
-# determine output size
-test_input = np_to_var(np.ones((2, in_chans, input_time_length, 1), dtype=np.float32))
-if cuda:
-    test_input = test_input.cuda()
-out = model(test_input)
-n_preds_per_input = out.cpu().data.numpy().shape[2]
-log.info("{:d} predictions per input/trial".format(n_preds_per_input))
+#
 
 from braindecode.experiments.experiment import Experiment
 from braindecode.datautil.iterators import CropsFromTrialsIterator
