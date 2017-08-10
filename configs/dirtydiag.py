@@ -1,9 +1,12 @@
 import os
-
-
 os.sys.path.insert(0, '/home/schirrmr/braindecode/code/')
 os.sys.path.insert(0, '/home/schirrmr/braindecode/code/braindecode/')
 os.sys.path.insert(0, '/home/schirrmr/code/auto-diagnosis/')
+
+from autodiag.batch_modifier import RemoveMinMaxDiff
+from autodiag.clean import set_jumps_to_zero, clean_jumps
+from autodiag.iterator import ModifiedIterator
+
 import logging
 import time
 
@@ -33,11 +36,7 @@ from braindecode.models.util import to_dense_prediction_model
 from braindecode.datautil.iterators import get_balanced_batches
 from braindecode.datautil.signalproc import bandpass_cnt
 
-from autodiag.dataset import load_data, DiagnosisSet
-from autodiag.clean import set_jumps_to_zero
-from autodiag.batch_modifier import RemoveMinMaxDiff
-from autodiag.iterator import ModifiedIterator
-from autodiag.modelutil import to_linear_plus_minus_net
+from autodiag.dataset import load_data, get_all_sorted_file_names_and_labels
 
 log = logging.getLogger(__name__)
 log.setLevel('DEBUG')
@@ -49,13 +48,13 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/after-clean-tests/',
+        'save_folder': './data/models/pytorch/auto-diag/dirty-data/',
         'only_return_exp': False,
     }]
 
     load_params = [{
         'max_recording_mins': 35,
-        'n_recordings': 1500,
+        'n_recordings': 500,
     }]
 
     clean_defaults = {
@@ -69,12 +68,24 @@ def get_grid_param_list():
     }
 
     clean_variants = [
-        {},
-        #{'batch_set_zero_val': 500, 'batch_set_zero_test': True},
-        #{'max_abs_val' : 800},
-        #{'max_abs_val' : 500},
-        #{'shrink_val': 200},
-        #{'shrink_val': 500},
+        #{},
+        {'shrink_val': 200},
+        {'shrink_val': 500},
+        {'shrink_val': 800},
+        # {'max_min_threshold': 600,
+        #  'max_min_expected': 50,},
+        # {'max_min_remove': 200},
+        # {'max_min_remove': 500},
+        # {'max_min_remove': 800},
+        # {'max_abs_val': 200},
+        # {'max_abs_val': 500},
+        # {'max_abs_val': 800},
+        # {'batch_set_zero_val': 200, 'batch_set_zero_test': False},
+        # {'batch_set_zero_val': 500, 'batch_set_zero_test': False},
+        # {'batch_set_zero_val': 800, 'batch_set_zero_test': False},
+        # {'batch_set_zero_val': 200, 'batch_set_zero_test': True},
+        # {'batch_set_zero_val': 500, 'batch_set_zero_test': True},
+        # {'batch_set_zero_val': 800, 'batch_set_zero_test': True},
     ]
 
     clean_params = product_of_list_of_lists_of_dicts(
@@ -84,6 +95,7 @@ def get_grid_param_list():
     preproc_params = dictlistprod({
         'sec_to_cut': [60],
         'duration_recording_mins': [3],
+        #'max_abs_val': [800,],
         'sampling_freq': [100],
         'low_cut_hz': [None,],
         'high_cut_hz': [None,],
@@ -108,11 +120,11 @@ def get_grid_param_list():
 
     split_params = dictlistprod({
         'n_folds': [5],
-        'i_test_fold': [0,1,2,3,4],
+        'i_test_fold': [0,1,2,3,4],#[],#
     })
 
     model_params = [
-    {
+        {
         'input_time_length': 1200,
         'final_conv_length': 40,
         'model_name': 'shallow',
@@ -124,16 +136,12 @@ def get_grid_param_list():
     },
     ]
 
-    final_layer_params = dictlistprod({
-        'sigmoid': [True, False]
-    })
-
     iterator_params = [{
         'batch_size':  64
     }]
 
     stop_params = [{
-        'max_epochs': 35,
+        'max_epochs': 35
     }]
 
 
@@ -145,7 +153,6 @@ def get_grid_param_list():
         preproc_params,
         split_params,
         model_params,
-        final_layer_params,
         iterator_params,
         standardizing_params,
         stop_params
@@ -257,26 +264,6 @@ def standardize(x, axis):
         1e-4, np.std(x, axis=axis, keepdims=True))
 
 
-def clean_jumps(x, window_len, threshold, expected, cuda):
-    x_var = np_to_var([x])
-    if cuda:
-        x_var = x_var.cuda()
-
-    maxs = F.max_pool1d(x_var,window_len, stride=1)
-    mins = F.max_pool1d(-x_var,window_len, stride=1)
-
-    diffs = maxs + mins
-    large_diffs = (diffs > threshold).type_as(diffs) * diffs
-    padded = F.pad(large_diffs.unsqueeze(0), (window_len-1,window_len-1, 0,0), 'constant', 0)
-    max_diffs = th.max(padded[:,:,:,window_len-1:], padded[:,:,:,:-window_len+1]).unsqueeze(0)
-    max_diffs = th.clamp(max_diffs, min=expected)
-    x_var = x_var * (expected / max_diffs)
-
-    x = x_var.data.cpu().numpy()[0]
-    return x
-
-
-
 def shrink_spikes(example, threshold, axis, n_window):
     """Example could be single example or all...
     should work for both."""
@@ -304,7 +291,6 @@ def run_exp(max_recording_mins, n_recordings,
             n_folds, i_test_fold,
             model_name,
             input_time_length, final_conv_length,
-            sigmoid,
             batch_size, max_epochs,
             only_return_exp):
     cuda = True
@@ -367,22 +353,48 @@ def run_exp(max_recording_mins, n_recordings,
     if divisor is not None:
         preproc_functions.append(lambda data, fs: (data / divisor, fs))
 
-    dataset = DiagnosisSet(n_recordings=n_recordings,
-                        max_recording_mins=max_recording_mins,
-                        preproc_functions=preproc_functions)
-    if not only_return_exp:
-        X,y = dataset.load()
+    all_file_names, labels = get_all_sorted_file_names_and_labels()
+    lengths = np.load(
+        '/home/schirrmr/code/auto-diagnosis/sorted-recording-lengths.npy')
+    mask = lengths < max_recording_mins * 60
+    cleaned_file_names = np.array(all_file_names)[mask]
+    cleaned_labels = labels[mask]
 
-    splitter = Splitter(n_folds, i_test_fold,)
+    diffs_per_rec = np.load('/home/schirrmr/code/auto-diagnosis/diffs_per_recording.npy')
+
+    def create_set(inds):
+        X = []
+        for i in inds:
+            log.info("Load {:s}".format(cleaned_file_names[i]))
+            x = load_data(cleaned_file_names[i], preproc_functions)
+            X.append(x)
+        y = cleaned_labels[inds].astype(np.int64)
+        return SignalAndTarget(X, y)
+
     if not only_return_exp:
-        train_set, valid_set, test_set = splitter.split(X,y)
-        del X,y # shouldn't be necessary, but just to make sure
+        folds = get_balanced_batches(n_recordings, None, False,
+                                     n_batches=n_folds)
+        test_inds = folds[i_test_fold]
+        valid_inds = folds[i_test_fold - 1]
+        all_inds = list(range(n_recordings))
+        train_inds = np.setdiff1d(all_inds, np.union1d(test_inds, valid_inds))
+
+        rec_nr_sorted_by_diff = np.argsort(diffs_per_rec)[::-1]
+        train_inds = rec_nr_sorted_by_diff[train_inds]
+        valid_inds = rec_nr_sorted_by_diff[valid_inds]
+        test_inds = rec_nr_sorted_by_diff[test_inds]
+
+        train_set = create_set(train_inds)
+        valid_set = create_set(valid_inds)
+        test_set = create_set(test_inds)
     else:
         train_set = None
         valid_set = None
         test_set = None
 
+
     set_random_seeds(seed=20170629, cuda=cuda)
+    # This will determine how many crops are processed in parallel
     n_classes = 2
     in_chans = 21
     if model_name == 'shallow':
@@ -392,8 +404,7 @@ def run_exp(max_recording_mins, n_recordings,
     elif model_name == 'deep':
         model = Deep4Net(in_chans, n_classes, input_time_length=input_time_length,
                  final_conv_length=final_conv_length).create_network()
-    if sigmoid:
-        model = to_linear_plus_minus_net(model)
+
     optimizer = optim.Adam(model.parameters())
     to_dense_prediction_model(model)
     log.info("Model:\n{:s}".format(str(model)))
@@ -433,8 +444,8 @@ def run_exp(max_recording_mins, n_recordings,
     if not only_return_exp:
         exp.run()
     else:
-        exp.dataset = dataset
-        exp.splitter = splitter
+        exp.dataset = None
+        exp.splitter = None
 
     return exp
 
@@ -463,7 +474,6 @@ def run(ex, max_recording_mins, n_recordings,
         divisor,
         n_folds, i_test_fold,
         model_name, input_time_length, final_conv_length,
-        sigmoid,
         batch_size, max_epochs,
         only_return_exp):
     kwargs = locals()
