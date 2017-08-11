@@ -1,5 +1,6 @@
 from braindecode.torch_ext.modules import Expression
 from torch import nn
+import torch as th
 
 def to_linear_plus_minus_net(model):
     model_sigmoid = nn.Sequential()

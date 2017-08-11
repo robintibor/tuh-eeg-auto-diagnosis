@@ -31,7 +31,6 @@ from braindecode.models.deep4 import Deep4Net
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.datautil.iterators import get_balanced_batches
 from braindecode.datautil.signalproc import bandpass_cnt
-from braindecode.torch_ext.constraints import MaxNormDefaultConstraint
 
 from autodiag.dataset import load_data, DiagnosisSet
 from autodiag.clean import set_jumps_to_zero
@@ -50,7 +49,7 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/10-fold/',
+        'save_folder': './data/models/pytorch/auto-diag/mean-before-after-softmax/',
         'only_return_exp': False,
     }]
 
@@ -76,12 +75,11 @@ def get_grid_param_list():
         #{'max_abs_val' : 500},
         #{'shrink_val': 200},
         #{'shrink_val': 500},
-        # {'shrink_val': 800},
+        #{'shrink_val': 800},
     ]
 
     clean_params = product_of_list_of_lists_of_dicts(
         [[clean_defaults], clean_variants])
-
 
     preproc_params = dictlistprod({
         'sec_to_cut': [60],
@@ -109,60 +107,25 @@ def get_grid_param_list():
         [[standardizing_defaults], standardizing_variants])
 
     split_params = dictlistprod({
-        'n_folds': [10],
-        'i_test_fold': [0,1,2,3,4,5,6,7,8,9],
+        'n_folds': [5],
+        'i_test_fold': [0,1,2,3,4],
     })
 
     model_params = [
-    # {
-    #     'input_time_length': 1200,
-    #     'final_conv_length': 40,
-    #     'model_name': 'shallow',
-    # },
     {
         'input_time_length': 1200,
-        'final_conv_length': 35,
+        'final_conv_length': 40,
         'model_name': 'shallow',
     },
-    {
-        'input_time_length': 2000,
-        'final_conv_length': 62,
-        'model_name': 'shallow',
-    },
-    {
-        'input_time_length': 4000,
-        'final_conv_length': 128,
-        'model_name': 'shallow',
-    },
-    # {
-    #     'input_time_length': 1200,
-    #     'final_conv_length': 2,
-    #     'model_name': 'deep',
-    # },
     {
         'input_time_length': 1200,
-         'final_conv_length': 1,
-         'model_name': 'deep',
-    },
-    {
-        'input_time_length': 2000,
-         'final_conv_length': 6,
-         'model_name': 'deep',
-    },
-    {
-         'input_time_length': 4000,
-         'final_conv_length': 18,
-         'model_name': 'deep',
+        'final_conv_length': 2,
+        'model_name': 'deep',
     },
     ]
 
     final_layer_params = dictlistprod({
-        'sigmoid': [False ],
-    })
-
-    model_constraint_params = dictlistprod({
-        'model_constraint': ['defaultnorm', None],
-
+        'mean_before_softmax': [True, False]
     })
 
     iterator_params = [{
@@ -185,8 +148,7 @@ def get_grid_param_list():
         final_layer_params,
         iterator_params,
         standardizing_params,
-        stop_params,
-        model_constraint_params
+        stop_params
     ])
 
     return grid_params
@@ -213,10 +175,6 @@ class Splitter(object):
         self.i_test_fold = i_test_fold
 
     def split(self, X, y):
-        if len(X) < self.n_folds:
-            raise ValueError("Less Trials: {:d} than folds: {:d}".format(
-                len(X), self.n_folds
-            ))
         folds = get_balanced_batches(len(X), None, False,
                                      n_batches=self.n_folds)
         test_inds = folds[self.i_test_fold]
@@ -332,6 +290,26 @@ def shrink_spikes(example, threshold, axis, n_window):
             np.log(np.maximum(abs_run_mean - threshold + 1, 0.01)))))
     return cleaned_example
 
+from braindecode.torch_ext.modules import Expression
+from torch import nn
+
+
+def to_mean_before_softmax(model):
+    model_meaned = nn.Sequential()
+    for name, module in model.named_children():
+        if name == 'softmax':
+            model_meaned.add_module('mean_outputs', Expression(lambda x: th.mean(x, dim=2)))
+        model_meaned.add_module(name, module)
+    return model_meaned
+
+def to_mean_after_softmax(model):
+    model_meaned = nn.Sequential()
+    for name, module in model.named_children():
+        model_meaned.add_module(name, module)
+        if name == 'softmax':
+            model_meaned.add_module('mean_outputs', Expression(lambda x: th.mean(x, dim=2)))
+    return model_meaned
+
 
 def run_exp(max_recording_mins, n_recordings,
             sec_to_cut, duration_recording_mins, max_abs_val,
@@ -346,8 +324,7 @@ def run_exp(max_recording_mins, n_recordings,
             n_folds, i_test_fold,
             model_name,
             input_time_length, final_conv_length,
-            sigmoid,
-            model_constraint,
+            mean_before_softmax,
             batch_size, max_epochs,
             only_return_exp):
     cuda = True
@@ -426,21 +403,15 @@ def run_exp(max_recording_mins, n_recordings,
         test_set = None
 
     set_random_seeds(seed=20170629, cuda=cuda)
-    if sigmoid:
-        n_classes = 1
-    else:
-        n_classes = 2
     in_chans = 21
+    n_classes = 2
     if model_name == 'shallow':
         model = ShallowFBCSPNet(in_chans=in_chans, n_classes=n_classes,
                                 input_time_length=input_time_length,
                                 final_conv_length=final_conv_length).create_network()
     elif model_name == 'deep':
-        print("input length", input_time_length)
         model = Deep4Net(in_chans, n_classes, input_time_length=input_time_length,
                  final_conv_length=final_conv_length).create_network()
-    if sigmoid:
-        model = to_linear_plus_minus_net(model)
     optimizer = optim.Adam(model.parameters())
     to_dense_prediction_model(model)
     log.info("Model:\n{:s}".format(str(model)))
@@ -453,21 +424,20 @@ def run_exp(max_recording_mins, n_recordings,
         test_input = test_input.cuda()
     out = model(test_input)
     n_preds_per_input = out.cpu().data.numpy().shape[2]
+
+    if mean_before_softmax:
+        model = to_mean_before_softmax(model)
+    else:
+        model = to_mean_after_softmax(model)
+
     log.info("{:d} predictions per input/trial".format(n_preds_per_input))
     iterator = CropsFromTrialsIterator(batch_size=batch_size,
                                        input_time_length=input_time_length,
                                       n_preds_per_input=n_preds_per_input)
-    if sigmoid:
-        loss_function = lambda preds, targets: binary_cross_entropy_with_logits(
-            th.mean(preds, dim=2)[:,1,0], targets.type_as(preds))
-    else:
-        loss_function = lambda preds, targets: F.nll_loss(
-            th.mean(preds, dim=2)[:,:,0], targets)
+    loss_function = F.nll_loss
 
-    if model_constraint is not None:
-        model_constraint = MaxNormDefaultConstraint()
-    monitors = [LossMonitor(), MisclassMonitor(col_suffix='sample_misclass'),
-                CroppedTrialMisclassMonitor(input_time_length),
+    model_constraint = None
+    monitors = [LossMonitor(), MisclassMonitor(col_suffix='misclass'),
                 RuntimeMonitor(),]
     stop_criterion = MaxEpochs(max_epochs)
     batch_modifier = None
@@ -516,8 +486,7 @@ def run(ex, max_recording_mins, n_recordings,
         divisor,
         n_folds, i_test_fold,
         model_name, input_time_length, final_conv_length,
-        sigmoid,
-        model_constraint,
+        mean_before_softmax,
         batch_size, max_epochs,
         only_return_exp):
     kwargs = locals()
