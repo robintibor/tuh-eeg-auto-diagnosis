@@ -1,0 +1,10 @@
+algo = python3.5 /home/schirrmr/code/hyperoptim/scripts/smac/run.py
+paramfile = shallow.pcs
+run_obj = quality
+runcount_limit = 1500
+cost_for_crash = 1
+deterministic = 1
+instance_file = instances.txt
+output_dir = /home/schirrmr/data/models/pytorch/auto-diag/smac-shallow/deterministic
+shared_model = 1
+input_psmac_dirs =  /home/schirrmr/data/models/pytorch/auto-diag/smac-shallow/deterministic

@@ -1,0 +1,48 @@
+run_file {/home/schirrmr/code/auto-diagnosis/configs/smac/shallow/shallow.py} [/home/schirrmr/code/auto-diagnosis/configs/smac/shallow/shallow.py]
+save_folder {/home/schirrmr/data/models/pytorch/auto-diag/smac-shallow/sacred/} [/home/schirrmr/data/models/pytorch/auto-diag/smac-shallow/sacred/]
+allow_crash {true}    [true]
+instance_param_name {i_test_fold} [i_test_fold]
+only_return_exp             {false}    [false]
+max_recording_mins          {35} [35]
+n_folds                     {10}   [10]
+n_recordings                {1500} [1500]
+#n_recordings                {10} [10]
+max_epochs                  {35}   [35]
+#max_epochs                  {3}   [3]
+
+sec_to_cut                  {60}   [60]
+duration_recording_mins     {3}    [3]
+max_min_threshold           {null}    [null]
+max_min_expected            {null}    [null]
+shrink_val                  {null}    [null]
+max_abs_val                 {800}     [800]
+max_min_remove              {null}    [null]
+batch_set_zero_val          {null}    [null]
+batch_set_zero_test         {null}    [null]
+sampling_freq               {100}     [100]
+low_cut_hz                  {null}    [null]
+high_cut_hz                 {null}    [null]
+divisor                     {10}   [10]
+exp_demean                  {false}   [false]
+exp_standardize             {false}   [false]
+moving_demean               {false}   [false]
+moving_standardize          {false}   [false]
+channel_demean              {false}   [false]
+channel_standardize         {false}   [false]
+batch_size                  {64}   [64]
+
+
+model_constraint            {defaultnorm, null} [defaultnorm]
+n_filters_time              [20,200] [40]i
+n_filters_spat              [20,200] [40]i
+filter_time_length          [5,75] [25]i
+conv_nonlin                 {elu, identity, relu, relu6, square, tanh} [square]
+pool_time_length            [1,200] [75]i
+pool_time_stride            [1,100] [15]i
+pool_mode                   {mean, max} [mean]
+pool_nonlin                 {identity, log} [identity]
+final_conv_length           [1,300] [35]i
+split_first_layer           {true, false} [true]
+do_batch_norm               {true, false} [true]
+drop_prob                   [0.0,0.9] [0.5]
+

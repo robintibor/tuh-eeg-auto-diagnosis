@@ -1,5 +1,5 @@
 import os
-
+# also check https://stackoverflow.com/questions/41861427/python-3-5-how-to-dynamically-import-a-module-given-the-full-file-path-in-the
 os.sys.path.insert(0, '/home/schirrmr/braindecode/code/')
 os.sys.path.insert(0, '/home/schirrmr/braindecode/code/braindecode/')
 os.sys.path.insert(0, '/home/schirrmr/code/auto-diagnosis/')
@@ -12,9 +12,6 @@ from torch import optim
 import torch.nn.functional as F
 import torch as th
 
-from hyperoptim.parse import cartesian_dict_of_lists_product, \
-    product_of_list_of_lists_of_dicts
-from hyperoptim.util import save_pkl_artifact
 from braindecode.datautil.signalproc import (exponential_running_standardize,
     exponential_running_demean)
 from braindecode.datautil.signal_target import SignalAndTarget
@@ -41,140 +38,9 @@ from autodiag.modelutil import to_linear_plus_minus_net
 from autodiag.losses import binary_cross_entropy_with_logits
 
 log = logging.getLogger(__name__)
-log.setLevel('DEBUG')
 
-def get_templates():
-    return {}
-
-
-def get_grid_param_list():
-    dictlistprod = cartesian_dict_of_lists_product
-    default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/10-fold/',
-        'only_return_exp': False,
-    }]
-
-    load_params = [{
-        'max_recording_mins': 35,
-        'n_recordings': 1500,
-    }]
-
-    clean_defaults = {
-        'max_min_threshold': None,
-        'shrink_val': None,
-        'max_min_expected': None,
-        'max_abs_val': None,
-        'batch_set_zero_val': None,
-        'batch_set_zero_test': None,
-        'max_min_remove': None,
-    }
-
-    clean_variants = [
-        {'max_abs_val' : 800},
-    ]
-
-    clean_params = product_of_list_of_lists_of_dicts(
-        [[clean_defaults], clean_variants])
-
-
-    preproc_params = dictlistprod({
-        'sec_to_cut': [60],
-        'duration_recording_mins': [3],
-        'sampling_freq': [100],
-        'low_cut_hz': [None,],
-        'high_cut_hz': [None,],
-        'divisor': [10],
-    })
-
-    standardizing_defaults = {
-        'exp_demean': False,
-        'exp_standardize': False,
-        'moving_demean': False,
-        'moving_standardize': False,
-        'channel_demean': False,
-        'channel_standardize': False,
-    }
-
-    standardizing_variants = [
-        {},
-    ]
-
-    standardizing_params = product_of_list_of_lists_of_dicts(
-        [[standardizing_defaults], standardizing_variants])
-
-    split_params = dictlistprod({
-        'n_folds': [10],
-        'i_test_fold': [0,1,2,3,4,5,6,7,8,9],
-    })
-
-    model_params = [
-    {
-        'input_time_length': 1200,
-        'final_conv_length': 35,
-        'model_name': 'shallow',
-        'n_start_chans': 60,
-        'n_chan_factor': None,
-    },
-    {
-        'input_time_length': 1200,
-        'final_conv_length': 35,
-        'model_name': 'shallow',
-        'n_start_chans': 80,
-        'n_chan_factor': None,
-    },
-    {
-        'input_time_length': 1200,
-        'final_conv_length': 1,
-        'model_name': 'deep',
-        'n_start_chans': 40,
-        'n_chan_factor': 2,
-    },
-    {
-        'input_time_length': 1200,
-        'final_conv_length': 1,
-        'model_name': 'deep',
-        'n_start_chans': 50,
-        'n_chan_factor': 1.6,
-    },
-    ]
-
-    final_layer_params = dictlistprod({
-        'sigmoid': [False ],
-    })
-
-    model_constraint_params = dictlistprod({
-        'model_constraint': ['defaultnorm', None],
-
-    })
-
-    iterator_params = [{
-        'batch_size':  64
-    }]
-
-    stop_params = [{
-        'max_epochs': 35,
-    }]
-
-
-    grid_params = product_of_list_of_lists_of_dicts([
-        default_params,
-        load_params,
-        clean_params,
-        preproc_params,
-        split_params,
-        model_params,
-        final_layer_params,
-        iterator_params,
-        standardizing_params,
-        stop_params,
-        model_constraint_params
-    ])
-
-    return grid_params
-
-
-def sample_config_params(rng, params):
-    return params
+def dummy():
+    print("import worked...")
 
 def create_set(X, y, inds):
     """
@@ -325,10 +191,8 @@ def run_exp(max_recording_mins, n_recordings,
             channel_demean, channel_standardize,
             divisor,
             n_folds, i_test_fold,
-            model_name,
-            n_start_chans, n_chan_factor,
-            input_time_length, final_conv_length,
-            sigmoid,
+            model,
+            input_time_length,
             model_constraint,
             batch_size, max_epochs,
             only_return_exp):
@@ -408,33 +272,12 @@ def run_exp(max_recording_mins, n_recordings,
         test_set = None
 
     set_random_seeds(seed=20170629, cuda=cuda)
-    if sigmoid:
-        n_classes = 1
-    else:
-        n_classes = 2
-    in_chans = 21
-    if model_name == 'shallow':
-        model = ShallowFBCSPNet(in_chans=in_chans, n_classes=n_classes,
-                                n_filters_time=n_start_chans,
-                                n_filters_spat=n_start_chans,
-                                input_time_length=input_time_length,
-                                final_conv_length=final_conv_length).create_network()
-    elif model_name == 'deep':
-        model = Deep4Net(in_chans, n_classes,
-                                n_filters_time=n_start_chans,
-                                n_filters_spat=n_start_chans,
-                         input_time_length=input_time_length,
-                         n_filters_2 = int(n_start_chans * n_chan_factor),
-                         n_filters_3 = int(n_start_chans * (n_chan_factor ** 2.0)),
-                         n_filters_4 = int(n_start_chans * (n_chan_factor ** 3.0)),
-                 final_conv_length=final_conv_length).create_network()
-    if sigmoid:
-        model = to_linear_plus_minus_net(model)
     optimizer = optim.Adam(model.parameters())
     to_dense_prediction_model(model)
     log.info("Model:\n{:s}".format(str(model)))
     if cuda:
         model.cuda()
+    in_chans = 21
     # determine output size
     test_input = np_to_var(
         np.ones((2, in_chans, input_time_length, 1), dtype=np.float32))
@@ -446,12 +289,8 @@ def run_exp(max_recording_mins, n_recordings,
     iterator = CropsFromTrialsIterator(batch_size=batch_size,
                                        input_time_length=input_time_length,
                                       n_preds_per_input=n_preds_per_input)
-    if sigmoid:
-        loss_function = lambda preds, targets: binary_cross_entropy_with_logits(
-            th.mean(preds, dim=2)[:,1,0], targets.type_as(preds))
-    else:
-        loss_function = lambda preds, targets: F.nll_loss(
-            th.mean(preds, dim=2)[:,:,0], targets)
+    loss_function = lambda preds, targets: F.nll_loss(
+        th.mean(preds, dim=2)[:,:,0], targets)
 
     if model_constraint is not None:
         model_constraint = MaxNormDefaultConstraint()
@@ -480,57 +319,3 @@ def run_exp(max_recording_mins, n_recordings,
 
     return exp
 
-
-def save_torch_artifact(ex, obj, filename):
-    """Uses tempfile and file lock to safely store a pkl object as artefact"""
-    import tempfile
-    import fasteners
-    log.info("Saving torch artifact")
-    with tempfile.NamedTemporaryFile(suffix='.pkl') as tmpfile:
-        lockname = tmpfile.name + '.lock'
-        file_lock = fasteners.InterProcessLock(lockname)
-        file_lock.acquire()
-        th.save(obj, open(tmpfile.name, 'wb'))
-        ex.add_artifact(tmpfile.name, filename)
-        file_lock.release()
-    log.info("Saved torch artifact")
-
-def run(ex, max_recording_mins, n_recordings,
-        sec_to_cut, duration_recording_mins, max_abs_val,
-        max_min_threshold, max_min_expected, shrink_val,
-        max_min_remove, batch_set_zero_val, batch_set_zero_test,
-        sampling_freq,
-        low_cut_hz, high_cut_hz,
-        exp_demean, exp_standardize,
-        moving_demean, moving_standardize,
-        channel_demean, channel_standardize,
-        divisor,
-        n_folds, i_test_fold,
-        model_name, input_time_length, final_conv_length,
-        n_start_chans, n_chan_factor,
-        sigmoid,
-        model_constraint,
-        batch_size, max_epochs,
-        only_return_exp):
-    kwargs = locals()
-    kwargs.pop('ex')
-    import sys
-    logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
-                     level=logging.DEBUG, stream=sys.stdout)
-    start_time = time.time()
-    ex.info['finished'] = False
-
-    exp = run_exp(**kwargs)
-    end_time = time.time()
-    run_time = end_time - start_time
-    ex.info['finished'] = True
-
-    if not only_return_exp:
-        last_row = exp.epochs_df.iloc[-1]
-        for key, val in last_row.iteritems():
-            ex.info[key] = float(val)
-    ex.info['runtime'] = run_time
-    if not only_return_exp:
-        save_pkl_artifact(ex, exp.epochs_df, 'epochs_df.pkl')
-        save_pkl_artifact(ex, exp.before_stop_df, 'before_stop_df.pkl')
-        save_torch_artifact(ex, exp.model.state_dict(), 'model_params.pkl')

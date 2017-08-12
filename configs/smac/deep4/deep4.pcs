@@ -1,0 +1,55 @@
+run_file {/home/schirrmr/code/auto-diagnosis/configs/smac/deep4/deep4.py} [/home/schirrmr/code/auto-diagnosis/configs/smac/deep4/deep4.py]
+save_folder {/home/schirrmr/data/models/pytorch/auto-diag/smac-deep4/sacred/} [/home/schirrmr/data/models/pytorch/auto-diag/smac-deep4/sacred/]
+allow_crash {true}    [true]
+instance_param_name {i_test_fold} [i_test_fold]
+only_return_exp             {false}    [false]
+max_recording_mins          {35} [35]
+n_folds                     {10}   [10]
+n_recordings                {1500} [1500]
+#n_recordings                {10} [10]
+max_epochs                  {35}   [35]
+#max_epochs                  {3}   [3]
+
+sec_to_cut                  {60}   [60]
+duration_recording_mins     {3}    [3]
+max_min_threshold           {null}    [null]
+max_min_expected            {null}    [null]
+shrink_val                  {null}    [null]
+max_abs_val                 {800}     [800]
+max_min_remove              {null}    [null]
+batch_set_zero_val          {null}    [null]
+batch_set_zero_test         {null}    [null]
+sampling_freq               {100}     [100]
+low_cut_hz                  {null}    [null]
+high_cut_hz                 {null}    [null]
+divisor                     {10}   [10]
+exp_demean                  {false}   [false]
+exp_standardize             {false}   [false]
+moving_demean               {false}   [false]
+moving_standardize          {false}   [false]
+channel_demean              {false}   [false]
+channel_standardize         {false}   [false]
+batch_size                  {64}   [64]
+
+
+model_constraint            {defaultnorm, null} [defaultnorm]
+n_filters_start             [20,70] [25]i
+n_filters_factor            [1,2]   [2]
+filter_time_length          [3,25] [10]i
+first_nonlin                {elu, identity, relu, relu6, square, tanh} [elu]
+first_pool_mode             {mean, max} [max]
+first_pool_nonlin           {identity, log} [identity]
+pool_time_stride            [1,8] [3]i
+pool_time_length            [1,8] [3]i
+drop_prob                   [0.0,0.9] [0.5]
+filter_length_2             [3,14] [10]i
+later_nonlin                {elu, relu, relu6, square, tanh} [elu]
+later_pool_mode             {mean, max} [max]
+later_pool_nonlin           {identity, log} [identity]
+filter_length_3             [3,14] [10]i
+filter_length_4             [3,14] [10]i
+final_conv_length           [1,14] [1]i
+double_time_convs           {true, false} [true]
+split_first_layer           {true, false} [true]
+do_batch_norm               {true, false} [true]
+
