@@ -7,4 +7,5 @@ deterministic = 1
 instance_file = instances.txt
 output_dir = /home/schirrmr/data/models/pytorch/auto-diag/smac-shallow/deterministic
 shared_model = 1
-input_psmac_dirs =  /home/schirrmr/data/models/pytorch/auto-diag/smac-shallow/deterministic
+input_psmac_dirs = /home/schirrmr/data/models/pytorch/auto-diag/smac-shallow/deterministic*
+cutoff_time = 12600

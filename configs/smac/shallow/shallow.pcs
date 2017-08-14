@@ -40,7 +40,7 @@ conv_nonlin                 {elu, identity, relu, relu6, square, tanh} [square]
 pool_time_length            [1,200] [75]i
 pool_time_stride            [1,100] [15]i
 pool_mode                   {mean, max} [mean]
-pool_nonlin                 {identity, log} [identity]
+pool_nonlin                 {identity, log} [log]
 final_conv_length           [1,300] [35]i
 split_first_layer           {true, false} [true]
 do_batch_norm               {true, false} [true]
