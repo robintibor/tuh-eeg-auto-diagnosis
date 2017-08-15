@@ -261,15 +261,13 @@ def run_exp(
     try:
         out = model(test_input)
     except:
-        log.warn("Model receptive field too large...")
-        return None
+        raise ValueError("Model receptive field too large...")
     n_preds_per_input = out.cpu().data.numpy().shape[2]
     n_receptive_field= input_time_length - n_preds_per_input
     if n_receptive_field > 6000:
-        log.warn("Model receptive field ({:d}) too large...".format(
+        raise ValueError("Model receptive field ({:d}) too large...".format(
             n_receptive_field
         ))
-        return None
     else:
         input_time_length = 2 * n_receptive_field
 

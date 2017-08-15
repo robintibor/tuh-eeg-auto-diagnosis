@@ -1,6 +1,5 @@
 run_file {/home/schirrmr/code/auto-diagnosis/configs/smac/shallow/shallow.py} [/home/schirrmr/code/auto-diagnosis/configs/smac/shallow/shallow.py]
 save_folder {/home/schirrmr/data/models/pytorch/auto-diag/smac-shallow/sacred/} [/home/schirrmr/data/models/pytorch/auto-diag/smac-shallow/sacred/]
-allow_crash {true}    [true]
 instance_param_name {i_test_fold} [i_test_fold]
 only_return_exp             {false}    [false]
 max_recording_mins          {35} [35]
