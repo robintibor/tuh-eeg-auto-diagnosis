@@ -49,13 +49,13 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/threepath/',
+        'save_folder': './data/models/pytorch/auto-diag/twopath-10fold/',
         'only_return_exp': False,
     }]
 
     load_params = [{
         'max_recording_mins': 35,
-        'n_recordings': 10,
+        'n_recordings': 1500,
     }]
 
     clean_defaults = {
@@ -102,14 +102,14 @@ def get_grid_param_list():
         [[standardizing_defaults], standardizing_variants])
 
     split_params = dictlistprod({
-        'n_folds': [5],
-        'i_test_fold': [0,1,2,3,4],
+        'n_folds': [10],
+        'i_test_fold': [0,1,2,3,4,5,6,7,8,9],
     })
 
 
     model_params = dictlistprod({
             'n_start_filters': [20,30,40],
-            'later_strides': [2,4,6],
+            'later_strides': [4,6],
         })
 
     model_params = product_of_list_of_lists_of_dicts(
@@ -137,7 +137,7 @@ def get_grid_param_list():
     }]
 
     stop_params = [{
-        'max_epochs': 3,
+        'max_epochs': 35,
     }]
 
 

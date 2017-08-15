@@ -49,7 +49,7 @@ later_pool_nonlin           {identity, log} [identity]
 filter_length_3             [3,14] [10]i
 filter_length_4             [3,14] [10]i
 final_conv_length           [1,14] [1]i
-double_time_convs           {true, false} [true]
+double_time_convs           {true, false} [true]#mistake..
 split_first_layer           {true, false} [true]
 do_batch_norm               {true, false} [true]
 

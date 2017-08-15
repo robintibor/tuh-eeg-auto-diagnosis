@@ -1,5 +1,4 @@
 import os
-
 os.sys.path.insert(0, '/home/schirrmr/braindecode/code/')
 os.sys.path.insert(0, '/home/schirrmr/braindecode/code/braindecode/')
 os.sys.path.insert(0, '/home/schirrmr/code/auto-diagnosis/')
@@ -11,6 +10,7 @@ import resampy
 from torch import optim
 import torch.nn.functional as F
 import torch as th
+from torch import nn
 
 from hyperoptim.parse import cartesian_dict_of_lists_product, \
     product_of_list_of_lists_of_dicts
@@ -22,11 +22,11 @@ from braindecode.torch_ext.util import np_to_var
 from braindecode.torch_ext.util import set_random_seeds
 from braindecode.experiments.experiment import Experiment
 from braindecode.datautil.iterators import CropsFromTrialsIterator
-from autodiag.monitors import CroppedNonDenseTrialMisclassMonitor
 from braindecode.experiments.monitors import (RuntimeMonitor, LossMonitor,
+                                              CroppedTrialMisclassMonitor,
                                               MisclassMonitor)
 from braindecode.experiments.stopcriteria import MaxEpochs
-from autodiag.threepathnet import create_multi_start_path_net
+from braindecode.models.deep4 import Deep4Net
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.datautil.iterators import get_balanced_batches
 from braindecode.datautil.signalproc import bandpass_cnt
@@ -38,6 +38,8 @@ from autodiag.batch_modifier import RemoveMinMaxDiff
 from autodiag.iterator import ModifiedIterator
 from autodiag.modelutil import to_linear_plus_minus_net
 from autodiag.losses import binary_cross_entropy_with_logits
+from autodiag.more_layers import net_with_more_layers
+
 
 log = logging.getLogger(__name__)
 log.setLevel('DEBUG')
@@ -49,7 +51,7 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/threepath-10fold/',
+        'save_folder': './data/models/pytorch/auto-diag/more-layers/',
         'only_return_exp': False,
     }]
 
@@ -106,27 +108,21 @@ def get_grid_param_list():
         'i_test_fold': [0,1,2,3,4,5,6,7,8,9],
     })
 
-
-    model_params = dictlistprod({
-            'virtual_chan_1x1_conv': [True],
-            'mean_across_features': [False],
-            'n_classifier_filters': [100,],
-            'n_start_filters': [8,10],
-            'drop_prob': [0.5],
-            'early_bnorm': [False],
-            'extra_conv_stride': [2,4,],
-            'later_kernel_len': [5,9],
-        })
+    model_params = [
+    {
+        'input_time_length': 18000,
+        'final_conv_length': 1,
+    },
+    ]
 
     model_params = product_of_list_of_lists_of_dicts(
-        [model_params,
-         [
-             {
-            'n_preds_per_input': 3000,
-             'input_time_length': 6000,
-         },
-         ]
-    ]
+        [model_params, dictlistprod({
+            'pool_stride': [3],
+            'n_blocks_to_add': [0,1,2]
+        }) +  dictlistprod({
+            'pool_stride': [4],
+            'n_blocks_to_add': [0,1]
+        })]
     )
 
     final_layer_params = dictlistprod({
@@ -139,7 +135,7 @@ def get_grid_param_list():
     })
 
     iterator_params = [{
-        'batch_size':  64
+        'batch_size':  32
     }]
 
     stop_params = [{
@@ -316,16 +312,8 @@ def run_exp(max_recording_mins, n_recordings,
             channel_demean, channel_standardize,
             divisor,
             n_folds, i_test_fold,
-            virtual_chan_1x1_conv,
-            mean_across_features,
-            n_classifier_filters,
-            n_start_filters,
-            drop_prob,
-            early_bnorm,
-            extra_conv_stride,
-            later_kernel_len,
-            input_time_length,
-            n_preds_per_input,
+            input_time_length, final_conv_length,
+            pool_stride, n_blocks_to_add,
             sigmoid,
             model_constraint,
             batch_size, max_epochs,
@@ -411,21 +399,30 @@ def run_exp(max_recording_mins, n_recordings,
     else:
         n_classes = 2
     in_chans = 21
-    model = create_multi_start_path_net(
-        in_chans=in_chans,
-        virtual_chan_1x1_conv=virtual_chan_1x1_conv,
-        n_start_filters=n_start_filters, early_bnorm=early_bnorm,
-        later_kernel_len=later_kernel_len,
-        extra_conv_stride=extra_conv_stride,
-        mean_across_features=mean_across_features,
-        n_classifier_filters=n_classifier_filters, drop_prob=drop_prob)
+
+    net = Deep4Net(in_chans=in_chans, n_classes=n_classes,
+                   input_time_length=input_time_length,
+                   final_conv_length=final_conv_length,
+                   pool_time_length=pool_stride,
+                   pool_time_stride=pool_stride,
+                   n_filters_2=50, n_filters_3=80,
+                   n_filters_4=120,
+   )
+    model = net_with_more_layers(net, n_blocks_to_add, nn.MaxPool2d)
     if sigmoid:
         model = to_linear_plus_minus_net(model)
     optimizer = optim.Adam(model.parameters())
+    to_dense_prediction_model(model)
     log.info("Model:\n{:s}".format(str(model)))
     if cuda:
         model.cuda()
-
+    # determine output size
+    test_input = np_to_var(
+        np.ones((2, in_chans, input_time_length, 1), dtype=np.float32))
+    if cuda:
+        test_input = test_input.cuda()
+    out = model(test_input)
+    n_preds_per_input = out.cpu().data.numpy().shape[2]
     log.info("{:d} predictions per input/trial".format(n_preds_per_input))
     iterator = CropsFromTrialsIterator(batch_size=batch_size,
                                        input_time_length=input_time_length,
@@ -440,9 +437,7 @@ def run_exp(max_recording_mins, n_recordings,
     if model_constraint is not None:
         model_constraint = MaxNormDefaultConstraint()
     monitors = [LossMonitor(), MisclassMonitor(col_suffix='sample_misclass'),
-                CroppedNonDenseTrialMisclassMonitor(
-                    input_time_length=input_time_length,
-                    n_preds_per_input=n_preds_per_input),
+                CroppedTrialMisclassMonitor(input_time_length),
                 RuntimeMonitor(),]
     stop_criterion = MaxEpochs(max_epochs)
     batch_modifier = None
@@ -492,16 +487,8 @@ def run(ex, max_recording_mins, n_recordings,
         channel_demean, channel_standardize,
         divisor,
         n_folds, i_test_fold,
-        virtual_chan_1x1_conv,
-        mean_across_features,
-        n_classifier_filters,
-        n_start_filters,
-        drop_prob,
-        early_bnorm,
-        extra_conv_stride,
-        later_kernel_len,
-        input_time_length,
-        n_preds_per_input,
+        input_time_length, final_conv_length,
+        pool_stride, n_blocks_to_add,
         sigmoid,
         model_constraint,
         batch_size, max_epochs,
