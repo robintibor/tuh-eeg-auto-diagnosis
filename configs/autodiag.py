@@ -50,13 +50,14 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/10-fold/',
+        #'save_folder': './data/models/pytorch/auto-diag/10-fold/',
+        'save_folder': './data/models/pytorch/auto-diag/car/',
         'only_return_exp': False,
     }]
 
     load_params = [{
         'max_recording_mins': 35,
-        'n_recordings': 1500,
+        'n_recordings': 10,#1500
     }]
 
     clean_defaults = {
@@ -76,7 +77,6 @@ def get_grid_param_list():
     clean_params = product_of_list_of_lists_of_dicts(
         [[clean_defaults], clean_variants])
 
-
     preproc_params = dictlistprod({
         'sec_to_cut': [60],
         'duration_recording_mins': [3],
@@ -85,6 +85,24 @@ def get_grid_param_list():
         'high_cut_hz': [None,],
         'divisor': [10],
     })
+
+    car_defaults = {
+        'car': False,
+        'minusa1a2': False,
+        'cara1a2': False,
+        'a1a2car': False,
+    }
+
+    car_variants = [
+        {},
+        {'car': True,},
+        {'minusa1a2': True,},
+        {'cara1a2': True,},
+        {'a1a2car': True,},
+    ]
+
+    car_params = product_of_list_of_lists_of_dicts(
+        [[car_defaults], car_variants])
 
     standardizing_defaults = {
         'exp_demean': False,
@@ -104,7 +122,7 @@ def get_grid_param_list():
 
     split_params = dictlistprod({
         'n_folds': [10],
-        'i_test_fold': [0,1,2,3,4,5,6,7,8,9],
+        'i_test_fold': [0,9],#[0,1,2,3,4,5,6,7,8,9],
     })
 
     model_params = [
@@ -112,29 +130,15 @@ def get_grid_param_list():
         'input_time_length': 1200,
         'final_conv_length': 35,
         'model_name': 'shallow',
-        'n_start_chans': 60,
-        'n_chan_factor': None,
-    },
-    {
-        'input_time_length': 1200,
-        'final_conv_length': 35,
-        'model_name': 'shallow',
-        'n_start_chans': 80,
-        'n_chan_factor': None,
-    },
-    {
-        'input_time_length': 1200,
-        'final_conv_length': 1,
-        'model_name': 'deep',
         'n_start_chans': 40,
-        'n_chan_factor': 2,
+        'n_chan_factor': None,
     },
     {
         'input_time_length': 1200,
         'final_conv_length': 1,
         'model_name': 'deep',
-        'n_start_chans': 50,
-        'n_chan_factor': 1.6,
+        'n_start_chans': 25,
+        'n_chan_factor': 2,
     },
     ]
 
@@ -143,7 +147,7 @@ def get_grid_param_list():
     })
 
     model_constraint_params = dictlistprod({
-        'model_constraint': ['defaultnorm', None],
+        'model_constraint': ['defaultnorm',],
 
     })
 
@@ -152,7 +156,7 @@ def get_grid_param_list():
     }]
 
     stop_params = [{
-        'max_epochs': 35,
+        'max_epochs': 3,#35,
     }]
 
 
@@ -161,6 +165,7 @@ def get_grid_param_list():
         load_params,
         clean_params,
         preproc_params,
+        car_params,
         split_params,
         model_params,
         final_layer_params,
@@ -323,6 +328,10 @@ def run_exp(max_recording_mins, n_recordings,
             exp_demean, exp_standardize,
             moving_demean, moving_standardize,
             channel_demean, channel_standardize,
+            car,
+            minusa1a2,
+            cara1a2,
+            a1a2car,
             divisor,
             n_folds, i_test_fold,
             model_name,
@@ -389,6 +398,25 @@ def run_exp(max_recording_mins, n_recordings,
         preproc_functions.append(lambda data, fs: (demean(data, axis=1), fs))
     if channel_standardize:
         preproc_functions.append(lambda data, fs: (standardize(data, axis=1), fs))
+    if car:
+        preproc_functions.append(lambda data, fs: (
+            data - np.mean(data, axis=0, keepdims=True), fs))
+    if minusa1a2:
+        preproc_functions.append(lambda data, fs: (
+            data - np.mean(data[:2], axis=0, keepdims=True), fs))
+    if cara1a2:
+        preproc_functions.append(lambda data, fs: (
+            data - np.mean(data, axis=0, keepdims=True), fs))
+        preproc_functions.append(lambda data, fs: (
+            data - np.mean(data[:2], axis=0, keepdims=True), fs))
+    if a1a2car:
+        preproc_functions.append(lambda data, fs: (
+            data - np.mean(data[:2], axis=0, keepdims=True), fs))
+        preproc_functions.append(lambda data, fs: (
+            data - np.mean(data, axis=0, keepdims=True), fs))
+
+
+
     if divisor is not None:
         preproc_functions.append(lambda data, fs: (data / divisor, fs))
 
@@ -504,6 +532,10 @@ def run(ex, max_recording_mins, n_recordings,
         exp_demean, exp_standardize,
         moving_demean, moving_standardize,
         channel_demean, channel_standardize,
+        car,
+        minusa1a2,
+        cara1a2,
+        a1a2car,
         divisor,
         n_folds, i_test_fold,
         model_name, input_time_length, final_conv_length,
