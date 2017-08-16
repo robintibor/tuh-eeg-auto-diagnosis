@@ -50,14 +50,13 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        #'save_folder': './data/models/pytorch/auto-diag/10-fold/',
         'save_folder': './data/models/pytorch/auto-diag/car/',
         'only_return_exp': False,
     }]
 
     load_params = [{
         'max_recording_mins': 35,
-        'n_recordings': 10,#1500
+        'n_recordings': 1500,
     }]
 
     clean_defaults = {
@@ -122,7 +121,7 @@ def get_grid_param_list():
 
     split_params = dictlistprod({
         'n_folds': [10],
-        'i_test_fold': [0,9],#[0,1,2,3,4,5,6,7,8,9],
+        'i_test_fold': [0,1,2,3,4,5,6,7,8,9],
     })
 
     model_params = [
@@ -156,7 +155,7 @@ def get_grid_param_list():
     }]
 
     stop_params = [{
-        'max_epochs': 3,#35,
+        'max_epochs': 35,
     }]
 
 
@@ -566,3 +565,5 @@ def run(ex, max_recording_mins, n_recordings,
         save_pkl_artifact(ex, exp.epochs_df, 'epochs_df.pkl')
         save_pkl_artifact(ex, exp.before_stop_df, 'before_stop_df.pkl')
         save_torch_artifact(ex, exp.model.state_dict(), 'model_params.pkl')
+    else:
+        return exp

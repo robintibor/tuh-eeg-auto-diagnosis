@@ -48,7 +48,7 @@ def get_all_sorted_file_names_and_labels():
         '.edf',
         key='time')
     abnormal_file_names = read_all_file_names(
-        '/home/gemeinl/data/normal_abnormal/abnormalv1.1.0/v1.1.0/edf/train/',
+        '/home/gemeinl/data/normal_abnormal/abnormalv1.1.0/v1.1.0/edf/train/abnormal/',
         '.edf',
         key='time')
 
