@@ -15,14 +15,14 @@ from numpy.random import RandomState
 
 from hyperoptim.parse import cartesian_dict_of_lists_product, \
     product_of_list_of_lists_of_dicts
-from hyperoptim.util import save_pkl_artifact
+from hyperoptim.util import save_pkl_artifact, save_npy_artifact
 from braindecode.datautil.signal_target import SignalAndTarget
 from braindecode.torch_ext.util import np_to_var
 from braindecode.torch_ext.util import set_random_seeds
 from braindecode.experiments.experiment import Experiment
 from braindecode.datautil.iterators import CropsFromTrialsIterator
+from autodiag.monitors import CroppedDiagnosisMonitor
 from braindecode.experiments.monitors import (RuntimeMonitor, LossMonitor,
-                                              CroppedTrialMisclassMonitor,
                                               MisclassMonitor)
 from braindecode.experiments.stopcriteria import MaxEpochs
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
@@ -31,9 +31,11 @@ from braindecode.models.util import to_dense_prediction_model
 from braindecode.datautil.iterators import get_balanced_batches
 from braindecode.datautil.splitters import concatenate_sets
 from braindecode.torch_ext.constraints import MaxNormDefaultConstraint
+from braindecode.torch_ext.util import var_to_np
 
 from autodiag.dataset import DiagnosisSet
 from autodiag.sgdr import CosineWithWarmRestarts, ScheduledOptimizer
+from autodiag.monitors import compute_preds_per_trial
 
 log = logging.getLogger(__name__)
 log.setLevel('DEBUG')
@@ -45,8 +47,13 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/sgdr-10-fold/',
+        'save_folder': './data/models/pytorch/auto-diag/dummy-save-pred/',
         'only_return_exp': False,
+    }]
+
+    save_params = [{
+        'save_predictions': False,
+        'save_crop_predictions': False,
     }]
 
     load_params = [{
@@ -139,6 +146,7 @@ def get_grid_param_list():
 
     grid_params = product_of_list_of_lists_of_dicts([
         default_params,
+        save_params,
         load_params,
         clean_params,
         preproc_params,
@@ -356,10 +364,10 @@ def run_exp(test_on_eval, max_recording_mins, n_recordings,
             test_X, test_y = test_dataset.load()
     if not test_on_eval:
         splitter = TrainValidTestSplitter(n_folds, i_test_fold,
-                                          shufle=shuffle)
+                                          shuffle=shuffle)
     else:
         splitter = TrainValidSplitter(n_folds, i_valid_fold=i_test_fold,
-                                          shufle=shuffle)
+                                          shuffle=shuffle)
     if not only_return_exp:
         if not test_on_eval:
             train_set, valid_set, test_set = splitter.split(X, y)
@@ -435,7 +443,7 @@ def run_exp(test_on_eval, max_recording_mins, n_recordings,
     if model_constraint is not None:
         model_constraint = MaxNormDefaultConstraint()
     monitors = [LossMonitor(), MisclassMonitor(col_suffix='sample_misclass'),
-                CroppedTrialMisclassMonitor(input_time_length),
+                CroppedDiagnosisMonitor(input_time_length, n_preds_per_input),
                 RuntimeMonitor(),]
     stop_criterion = MaxEpochs(max_epochs)
     batch_modifier = None
@@ -489,14 +497,19 @@ def run(ex,
         a1a2car,
         divisor,
         n_folds, i_test_fold,
+        shuffle,
         model_name, input_time_length, final_conv_length,
         n_start_chans, n_chan_factor,
         model_constraint,
         sgdr, init_lr, momentum,
         batch_size, max_epochs,
+        save_predictions,
+        save_crop_predictions,
         only_return_exp):
     kwargs = locals()
     kwargs.pop('ex')
+    kwargs.pop('save_predictions')
+    kwargs.pop('save_crop_predictions')
     import sys
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                      level=logging.DEBUG, stream=sys.stdout)
@@ -517,5 +530,29 @@ def run(ex,
         save_pkl_artifact(ex, exp.epochs_df, 'epochs_df.pkl')
         save_pkl_artifact(ex, exp.before_stop_df, 'before_stop_df.pkl')
         save_torch_artifact(ex, exp.model.state_dict(), 'model_params.pkl')
+        if save_predictions:
+            for setname in ('train', 'valid', 'test'):
+                log.info("Compute and save predictions for {:s}...".format(
+                    setname))
+                dataset = exp.datasets[setname]
+                preds_per_batch = [var_to_np(exp.model(np_to_var(b[0]).cuda()))
+                          for b in exp.iterator.get_batches(dataset, shuffle=False)]
+                preds_per_trial = compute_preds_per_trial(
+                    preds_per_batch, dataset,
+                    input_time_length=exp.iterator.input_time_length,
+                    n_stride=exp.iterator.n_preds_per_input)
+                mean_preds_per_trial = [np.mean(preds, axis=(0, 2)) for preds in
+                                            preds_per_trial]
+                mean_preds_per_trial = np.array(mean_preds_per_trial)
+                log.info("Save trial predictions for {:s}...".format(
+                    setname))
+                save_npy_artifact(ex, mean_preds_per_trial,
+                                  '{:s}_trial_preds.npy'.format(setname))
+                if save_crop_predictions:
+                    log.info("Save crop predictions for {:s}...".format(
+                        setname))
+                    save_npy_artifact(ex, preds_per_trial,
+                                      '{:s}_crop_preds.npy'.format(setname))
+
     else:
         return exp
