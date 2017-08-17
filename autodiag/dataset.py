@@ -42,16 +42,13 @@ def load_data(fname, preproc_functions):
         fs = float(fs)
     return data
 
-def get_all_sorted_file_names_and_labels():
-    normal_file_names = read_all_file_names(
-        '/home/gemeinl/data/normal_abnormal/normalv1.1.0/v1.1.0/edf/train/normal/',
-        '.edf',
-        key='time')
-    abnormal_file_names = read_all_file_names(
-        '/home/gemeinl/data/normal_abnormal/abnormalv1.1.0/v1.1.0/edf/train/abnormal/',
-        '.edf',
-        key='time')
-
+def get_all_sorted_file_names_and_labels(train_or_eval):
+    normal_path = ('/home/gemeinl/data/normal_abnormal/normalv1.1.0/'
+        'v1.1.0/edf/{:s}/normal/'.format(train_or_eval))
+    normal_file_names = read_all_file_names(normal_path, '.edf', key='time')
+    abnormal_path = ('/home/gemeinl/data/normal_abnormal/abnormalv1.1.0/'
+        'v1.1.0/edf/{:s}/abnormal/'.format(train_or_eval))
+    abnormal_file_names = read_all_file_names(abnormal_path, '.edf', key='time')
 
     all_file_names = normal_file_names + abnormal_file_names
 
@@ -64,24 +61,28 @@ def get_all_sorted_file_names_and_labels():
     return all_file_names, labels
 
 class DiagnosisSet(object):
-    def __init__(self, n_recordings, max_recording_mins, preproc_functions):
+    def __init__(self, n_recordings, max_recording_mins, preproc_functions,
+                 train_or_eval='train'):
         self.n_recordings = n_recordings
         self.max_recording_mins = max_recording_mins
         self.preproc_functions = preproc_functions
-        self.mask = []
+        self.train_or_eval = train_or_eval
 
     def load(self):
         log.info("Read file names")
-        all_file_names, labels = get_all_sorted_file_names_and_labels()
+        all_file_names, labels = get_all_sorted_file_names_and_labels(
+            train_or_eval=self.train_or_eval)
 
         log.info("Read recording lengths...")
-        lengths = np.load(
-            '/home/schirrmr/code/auto-diagnosis/sorted-recording-lengths.npy')
-        mask = lengths < self.max_recording_mins * 60
-        cleaned_file_names = np.array(all_file_names)[mask]
-        cleaned_labels = labels[mask]
-        self.mask = mask
-
+        if self.max_recording_mins is not None:
+            lengths = np.load(
+                '/home/schirrmr/code/auto-diagnosis/sorted-recording-lengths.npy')
+            mask = lengths < self.max_recording_mins * 60
+            cleaned_file_names = np.array(all_file_names)[mask]
+            cleaned_labels = labels[mask]
+        else:
+            cleaned_file_names = np.array(all_file_names)
+            cleaned_labels = labels
         X = []
         y = []
         n_files = len(cleaned_file_names[:self.n_recordings])

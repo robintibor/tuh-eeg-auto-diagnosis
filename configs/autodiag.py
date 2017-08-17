@@ -11,12 +11,11 @@ import resampy
 from torch import optim
 import torch.nn.functional as F
 import torch as th
+from numpy.random import RandomState
 
 from hyperoptim.parse import cartesian_dict_of_lists_product, \
     product_of_list_of_lists_of_dicts
 from hyperoptim.util import save_pkl_artifact
-from braindecode.datautil.signalproc import (exponential_running_standardize,
-    exponential_running_demean)
 from braindecode.datautil.signal_target import SignalAndTarget
 from braindecode.torch_ext.util import np_to_var
 from braindecode.torch_ext.util import set_random_seeds
@@ -30,15 +29,11 @@ from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.datautil.iterators import get_balanced_batches
-from braindecode.datautil.signalproc import bandpass_cnt
+from braindecode.datautil.splitters import concatenate_sets
 from braindecode.torch_ext.constraints import MaxNormDefaultConstraint
 
-from autodiag.dataset import load_data, DiagnosisSet
-from autodiag.clean import set_jumps_to_zero
-from autodiag.batch_modifier import RemoveMinMaxDiff
-from autodiag.iterator import ModifiedIterator
-from autodiag.modelutil import to_linear_plus_minus_net
-from autodiag.losses import binary_cross_entropy_with_logits
+from autodiag.dataset import DiagnosisSet
+from autodiag.sgdr import CosineWithWarmRestarts, ScheduledOptimizer
 
 log = logging.getLogger(__name__)
 log.setLevel('DEBUG')
@@ -50,7 +45,7 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/car/',
+        'save_folder': './data/models/pytorch/auto-diag/sgdr-10-fold/',
         'only_return_exp': False,
     }]
 
@@ -59,29 +54,15 @@ def get_grid_param_list():
         'n_recordings': 1500,
     }]
 
-    clean_defaults = {
-        'max_min_threshold': None,
-        'shrink_val': None,
-        'max_min_expected': None,
-        'max_abs_val': None,
-        'batch_set_zero_val': None,
-        'batch_set_zero_test': None,
-        'max_min_remove': None,
-    }
-
-    clean_variants = [
-        {'max_abs_val' : 800},
+    clean_params = [
+        {'max_abs_val': 800,
+         'shrink_val': None},
     ]
-
-    clean_params = product_of_list_of_lists_of_dicts(
-        [[clean_defaults], clean_variants])
 
     preproc_params = dictlistprod({
         'sec_to_cut': [60],
         'duration_recording_mins': [3],
         'sampling_freq': [100],
-        'low_cut_hz': [None,],
-        'high_cut_hz': [None,],
         'divisor': [10],
     })
 
@@ -94,34 +75,16 @@ def get_grid_param_list():
 
     car_variants = [
         {},
-        {'car': True,},
-        {'minusa1a2': True,},
-        {'cara1a2': True,},
-        {'a1a2car': True,},
     ]
 
     car_params = product_of_list_of_lists_of_dicts(
         [[car_defaults], car_variants])
 
-    standardizing_defaults = {
-        'exp_demean': False,
-        'exp_standardize': False,
-        'moving_demean': False,
-        'moving_standardize': False,
-        'channel_demean': False,
-        'channel_standardize': False,
-    }
-
-    standardizing_variants = [
-        {},
-    ]
-
-    standardizing_params = product_of_list_of_lists_of_dicts(
-        [[standardizing_defaults], standardizing_variants])
-
     split_params = dictlistprod({
+        'test_on_eval': [False],
         'n_folds': [10],
         'i_test_fold': [0,1,2,3,4,5,6,7,8,9],
+        'shuffle': [False],
     })
 
     model_params = [
@@ -140,15 +103,30 @@ def get_grid_param_list():
         'n_chan_factor': 2,
     },
     ]
-
-    final_layer_params = dictlistprod({
-        'sigmoid': [False ],
-    })
-
     model_constraint_params = dictlistprod({
-        'model_constraint': ['defaultnorm',],
+        'model_constraint': ['defaultnorm',],#None
 
     })
+
+    adam_params = [
+        {
+        'sgdr': False,
+        'momentum': None,
+        'init_lr': 1e-3
+    },{
+        'sgdr': False,
+        'momentum': None,
+        'init_lr': 1e-4
+    }
+    ]
+
+    sgdr_params = dictlistprod({
+        'sgdr': [True],
+        'init_lr': [0.1,0.01],
+        'momentum': [0.9],
+    })
+
+    optim_params = adam_params + sgdr_params
 
     iterator_params = [{
         'batch_size':  64
@@ -167,9 +145,8 @@ def get_grid_param_list():
         car_params,
         split_params,
         model_params,
-        final_layer_params,
+        optim_params,
         iterator_params,
-        standardizing_params,
         stop_params,
         model_constraint_params
     ])
@@ -179,6 +156,7 @@ def get_grid_param_list():
 
 def sample_config_params(rng, params):
     return params
+
 
 def create_set(X, y, inds):
     """
@@ -192,17 +170,19 @@ def create_set(X, y, inds):
     return SignalAndTarget(new_X, new_y)
 
 
-class Splitter(object):
-    def __init__(self, n_folds, i_test_fold):
+class TrainValidTestSplitter(object):
+    def __init__(self, n_folds, i_test_fold, shuffle):
         self.n_folds = n_folds
         self.i_test_fold = i_test_fold
+        self.rng = RandomState(39483948)
+        self.shuffle = shuffle
 
-    def split(self, X, y):
+    def split(self, X, y,):
         if len(X) < self.n_folds:
             raise ValueError("Less Trials: {:d} than folds: {:d}".format(
                 len(X), self.n_folds
             ))
-        folds = get_balanced_batches(len(X), None, False,
+        folds = get_balanced_batches(len(X), self.rng, self.shuffle,
                                      n_batches=self.n_folds)
         test_inds = folds[self.i_test_fold]
         valid_inds = folds[self.i_test_fold - 1]
@@ -220,6 +200,32 @@ class Splitter(object):
         test_set = create_set(X, y, test_inds)
 
         return train_set, valid_set, test_set
+
+
+class TrainValidSplitter(object):
+    def __init__(self, n_folds, i_valid_fold, shuffle):
+        self.n_folds = n_folds
+        self.i_valid_fold = i_valid_fold
+        self.rng = RandomState(39483948)
+        self.shuffle = shuffle
+
+    def split(self, X, y):
+        if len(X) < self.n_folds:
+            raise ValueError("Less Trials: {:d} than folds: {:d}".format(
+                len(X), self.n_folds
+            ))
+        folds = get_balanced_batches(len(X), self.rng, self.shuffle,
+                                     n_batches=self.n_folds)
+        valid_inds = folds[self.i_valid_fold]
+        all_inds = list(range(len(X)))
+        train_inds = np.setdiff1d(all_inds, valid_inds)
+        assert np.intersect1d(train_inds, valid_inds).size == 0
+        assert np.array_equal(np.sort(np.union1d(train_inds, valid_inds)),
+            all_inds)
+
+        train_set = create_set(X, y, train_inds)
+        valid_set = create_set(X, y, valid_inds)
+        return train_set, valid_set
 
 
 def running_mean(arr, window_len, axis=0):
@@ -258,52 +264,6 @@ def padded_moving_demean(arr, axis, n_window):
     return arr
 
 
-def padded_moving_divide_square(arr, axis, n_window, eps=0.1):
-    """Pads by replicating n_window first and last elements
-    and putting them at end and start (no reflection)"""
-    assert arr.dtype != np.float16
-    assert n_window % 2 == 1
-    mov_mean_sqr = padded_moving_mean(np.square(arr), axis=axis, n_window=n_window)
-    arr = arr / np.maximum(np.sqrt(mov_mean_sqr), eps)
-    return arr
-
-
-def padded_moving_standardize(arr, axis, n_window, eps=0.1):
-    assert arr.dtype != np.float16
-    assert n_window % 2 == 1
-    arr = padded_moving_demean(arr, axis=axis, n_window=n_window)
-    arr = padded_moving_divide_square(arr, axis=axis, n_window=n_window, eps=eps)
-    return arr
-
-
-def demean(x, axis):
-    return x - np.mean(x, axis=axis, keepdims=True)
-
-def standardize(x, axis):
-    return (x - np.mean(x, axis=axis, keepdims=True)) / np.maximum(
-        1e-4, np.std(x, axis=axis, keepdims=True))
-
-
-def clean_jumps(x, window_len, threshold, expected, cuda):
-    x_var = np_to_var([x])
-    if cuda:
-        x_var = x_var.cuda()
-
-    maxs = F.max_pool1d(x_var,window_len, stride=1)
-    mins = F.max_pool1d(-x_var,window_len, stride=1)
-
-    diffs = maxs + mins
-    large_diffs = (diffs > threshold).type_as(diffs) * diffs
-    padded = F.pad(large_diffs.unsqueeze(0), (window_len-1,window_len-1, 0,0), 'constant', 0)
-    max_diffs = th.max(padded[:,:,:,window_len-1:], padded[:,:,:,:-window_len+1]).unsqueeze(0)
-    max_diffs = th.clamp(max_diffs, min=expected)
-    x_var = x_var * (expected / max_diffs)
-
-    x = x_var.data.cpu().numpy()[0]
-    return x
-
-
-
 def shrink_spikes(example, threshold, axis, n_window):
     """Example could be single example or all...
     should work for both."""
@@ -318,26 +278,24 @@ def shrink_spikes(example, threshold, axis, n_window):
     return cleaned_example
 
 
-def run_exp(max_recording_mins, n_recordings,
+def run_exp(test_on_eval, max_recording_mins, n_recordings,
             sec_to_cut, duration_recording_mins, max_abs_val,
-            max_min_threshold, max_min_expected, shrink_val,
-            max_min_remove, batch_set_zero_val, batch_set_zero_test,
+            shrink_val,
             sampling_freq,
-            low_cut_hz, high_cut_hz,
-            exp_demean, exp_standardize,
-            moving_demean, moving_standardize,
-            channel_demean, channel_standardize,
             car,
             minusa1a2,
             cara1a2,
             a1a2car,
             divisor,
             n_folds, i_test_fold,
+            shuffle,
             model_name,
             n_start_chans, n_chan_factor,
             input_time_length, final_conv_length,
-            sigmoid,
             model_constraint,
+            sgdr,
+            init_lr,
+            momentum,
             batch_size, max_epochs,
             only_return_exp):
     cuda = True
@@ -351,20 +309,6 @@ def run_exp(max_recording_mins, n_recordings,
     if max_abs_val is not None:
         preproc_functions.append(lambda data, fs:
                                  (np.clip(data, -max_abs_val, max_abs_val), fs))
-    if max_min_threshold is not None:
-        preproc_functions.append(lambda data, fs:
-                                 (clean_jumps(
-                                     data, 200, max_min_threshold,
-                                     max_min_expected, cuda), fs))
-    if max_min_remove is not None:
-        window_len = 200
-        preproc_functions.append(lambda data, fs:
-                                 (set_jumps_to_zero(
-                                     data, window_len=window_len,
-                                     threshold=max_min_remove,
-                                     cuda=cuda,
-                                     clip_min_max_to_zero=True), fs))
-
     if shrink_val is not None:
         preproc_functions.append(lambda data, fs:
                                  (shrink_spikes(
@@ -375,28 +319,6 @@ def run_exp(max_recording_mins, n_recordings,
                                                                 axis=1,
                                                                 filter='kaiser_fast'),
                                                sampling_freq))
-    preproc_functions.append(lambda data, fs:
-                             (bandpass_cnt(data, low_cut_hz, high_cut_hz,
-                                           fs,
-                                           filt_order=4, axis=1),
-                              fs))
-
-    if exp_demean:
-        preproc_functions.append(lambda data, fs: (exponential_running_demean(
-            data.T, factor_new=0.001, init_block_size=100).T, fs))
-    if exp_standardize:
-        preproc_functions.append(lambda data, fs: (exponential_running_standardize(
-            data.T, factor_new=0.001, init_block_size=100).T, fs))
-    if moving_demean:
-        preproc_functions.append(lambda data, fs: (padded_moving_demean(
-            data, axis=1, n_window=201), fs))
-    if moving_standardize:
-        preproc_functions.append(lambda data, fs: (padded_moving_standardize(
-            data, axis=1, n_window=201), fs))
-    if channel_demean:
-        preproc_functions.append(lambda data, fs: (demean(data, axis=1), fs))
-    if channel_standardize:
-        preproc_functions.append(lambda data, fs: (standardize(data, axis=1), fs))
     if car:
         preproc_functions.append(lambda data, fs: (
             data - np.mean(data, axis=0, keepdims=True), fs))
@@ -420,14 +342,41 @@ def run_exp(max_recording_mins, n_recordings,
         preproc_functions.append(lambda data, fs: (data / divisor, fs))
 
     dataset = DiagnosisSet(n_recordings=n_recordings,
-                        max_recording_mins=max_recording_mins,
-                        preproc_functions=preproc_functions)
+                           max_recording_mins=max_recording_mins,
+                           preproc_functions=preproc_functions,
+                           train_or_eval='train')
+    if test_on_eval:
+        test_dataset = DiagnosisSet(n_recordings=n_recordings,
+                                max_recording_mins=None,
+                                preproc_functions=preproc_functions,
+                                train_or_eval='eval')
     if not only_return_exp:
         X,y = dataset.load()
-
-    splitter = Splitter(n_folds, i_test_fold,)
+        if test_on_eval:
+            test_X, test_y = test_dataset.load()
+    if not test_on_eval:
+        splitter = TrainValidTestSplitter(n_folds, i_test_fold,
+                                          shufle=shuffle)
+    else:
+        splitter = TrainValidSplitter(n_folds, i_valid_fold=i_test_fold,
+                                          shufle=shuffle)
     if not only_return_exp:
-        train_set, valid_set, test_set = splitter.split(X,y)
+        if not test_on_eval:
+            train_set, valid_set, test_set = splitter.split(X, y)
+            if sgdr:
+                train_set = concatenate_sets([train_set, valid_set])
+                # dummy valid set...
+                valid_set.X = valid_set.X[:3]
+                valid_set.y = valid_set.y[:3]
+        else:
+            if not sgdr:
+                train_set, valid_set = splitter.split(X, y)
+            else:
+                # dummy valid set...
+                train_set = SignalAndTarget(X,y)
+                valid_set = SignalAndTarget(X[:3], y[:3])
+            test_set = SignalAndTarget(test_X, test_y)
+            del test_X, test_y
         del X,y # shouldn't be necessary, but just to make sure
     else:
         train_set = None
@@ -435,10 +384,7 @@ def run_exp(max_recording_mins, n_recordings,
         test_set = None
 
     set_random_seeds(seed=20170629, cuda=cuda)
-    if sigmoid:
-        n_classes = 1
-    else:
-        n_classes = 2
+    n_classes = 2
     in_chans = 21
     if model_name == 'shallow':
         model = ShallowFBCSPNet(in_chans=in_chans, n_classes=n_classes,
@@ -448,16 +394,15 @@ def run_exp(max_recording_mins, n_recordings,
                                 final_conv_length=final_conv_length).create_network()
     elif model_name == 'deep':
         model = Deep4Net(in_chans, n_classes,
-                                n_filters_time=n_start_chans,
-                                n_filters_spat=n_start_chans,
+                         n_filters_time=n_start_chans,
+                         n_filters_spat=n_start_chans,
                          input_time_length=input_time_length,
                          n_filters_2 = int(n_start_chans * n_chan_factor),
                          n_filters_3 = int(n_start_chans * (n_chan_factor ** 2.0)),
                          n_filters_4 = int(n_start_chans * (n_chan_factor ** 3.0)),
-                 final_conv_length=final_conv_length).create_network()
-    if sigmoid:
-        model = to_linear_plus_minus_net(model)
-    optimizer = optim.Adam(model.parameters())
+                         final_conv_length=final_conv_length).create_network()
+
+
     to_dense_prediction_model(model)
     log.info("Model:\n{:s}".format(str(model)))
     if cuda:
@@ -472,13 +417,20 @@ def run_exp(max_recording_mins, n_recordings,
     log.info("{:d} predictions per input/trial".format(n_preds_per_input))
     iterator = CropsFromTrialsIterator(batch_size=batch_size,
                                        input_time_length=input_time_length,
-                                      n_preds_per_input=n_preds_per_input)
-    if sigmoid:
-        loss_function = lambda preds, targets: binary_cross_entropy_with_logits(
-            th.mean(preds, dim=2)[:,1,0], targets.type_as(preds))
+                                       n_preds_per_input=n_preds_per_input)
+
+    if sgdr is False:
+        optimizer = optim.Adam(model.parameters(), lr=init_lr)
     else:
-        loss_function = lambda preds, targets: F.nll_loss(
-            th.mean(preds, dim=2)[:,:,0], targets)
+        n_batches = sum(
+            [1 for _ in iterator.get_batches(train_set, shuffle=False)])
+        sgd = optim.SGD(model.parameters(), momentum=momentum,
+                              lr=init_lr)
+        optimizer = ScheduledOptimizer(CosineWithWarmRestarts(
+            sgd, batch_period=max_epochs * n_batches, base_lr=init_lr))
+
+    loss_function = lambda preds, targets: F.nll_loss(
+        th.mean(preds, dim=2)[:,:,0], targets)
 
     if model_constraint is not None:
         model_constraint = MaxNormDefaultConstraint()
@@ -487,23 +439,25 @@ def run_exp(max_recording_mins, n_recordings,
                 RuntimeMonitor(),]
     stop_criterion = MaxEpochs(max_epochs)
     batch_modifier = None
-    if batch_set_zero_val is not None:
-        batch_modifier = RemoveMinMaxDiff(batch_set_zero_val, clip_max_abs=True,
-                                          set_zero=True)
-    if (batch_set_zero_val is not None) and (batch_set_zero_test == True):
-        iterator = ModifiedIterator(iterator, batch_modifier,)
-        batch_modifier = None
+    run_after_early_stop = True
     exp = Experiment(model, train_set, valid_set, test_set, iterator,
                      loss_function, optimizer, model_constraint,
                      monitors, stop_criterion,
                      remember_best_column='valid_misclass',
-                     run_after_early_stop=True, batch_modifier=batch_modifier,
+                     run_after_early_stop=run_after_early_stop,
+                     batch_modifier=batch_modifier,
                      cuda=cuda)
     if not only_return_exp:
-        exp.run()
+        if not sgdr:
+            exp.run()
+        else:
+            exp.setup_training()
+            exp.run_until_early_stop()
     else:
         exp.dataset = dataset
         exp.splitter = splitter
+        if test_on_eval:
+            exp.test_dataset = test_dataset
 
     return exp
 
@@ -522,15 +476,13 @@ def save_torch_artifact(ex, obj, filename):
         file_lock.release()
     log.info("Saved torch artifact")
 
-def run(ex, max_recording_mins, n_recordings,
+
+def run(ex,
+        test_on_eval,
+        max_recording_mins, n_recordings,
         sec_to_cut, duration_recording_mins, max_abs_val,
-        max_min_threshold, max_min_expected, shrink_val,
-        max_min_remove, batch_set_zero_val, batch_set_zero_test,
+        shrink_val,
         sampling_freq,
-        low_cut_hz, high_cut_hz,
-        exp_demean, exp_standardize,
-        moving_demean, moving_standardize,
-        channel_demean, channel_standardize,
         car,
         minusa1a2,
         cara1a2,
@@ -539,8 +491,8 @@ def run(ex, max_recording_mins, n_recordings,
         n_folds, i_test_fold,
         model_name, input_time_length, final_conv_length,
         n_start_chans, n_chan_factor,
-        sigmoid,
         model_constraint,
+        sgdr, init_lr, momentum,
         batch_size, max_epochs,
         only_return_exp):
     kwargs = locals()
