@@ -45,6 +45,7 @@ class SplitStartBlock(torch.nn.Module):
 
         self.conv_2a = nn.Conv2d(n_start_filters, n_start_filters, (11, 1),
                                  stride=(2, 1), padding=(5, 0))
+
         if early_bnorm:
             self.bnorm_2a = nn.BatchNorm2d(n_start_filters, )
         else:

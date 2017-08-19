@@ -21,7 +21,6 @@ from braindecode.torch_ext.util import np_to_var
 from braindecode.torch_ext.util import set_random_seeds
 from braindecode.experiments.experiment import Experiment
 from braindecode.datautil.iterators import CropsFromTrialsIterator
-from autodiag.monitors import CroppedDiagnosisMonitor
 from braindecode.experiments.monitors import (RuntimeMonitor, LossMonitor,
                                               MisclassMonitor)
 from braindecode.experiments.stopcriteria import MaxEpochs
@@ -36,6 +35,8 @@ from braindecode.torch_ext.util import var_to_np
 from autodiag.dataset import DiagnosisSet
 from autodiag.sgdr import CosineWithWarmRestarts, ScheduledOptimizer
 from autodiag.monitors import compute_preds_per_trial
+from autodiag.threepathnet import create_multi_start_path_net
+from autodiag.monitors import CroppedDiagnosisMonitor
 
 log = logging.getLogger(__name__)
 log.setLevel('DEBUG')
@@ -47,7 +48,7 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/dummy-save-pred/',
+        'save_folder': './data/models/pytorch/auto-diag/final-eval/',
         'only_return_exp': False,
     }]
 
@@ -58,7 +59,7 @@ def get_grid_param_list():
 
     load_params = [{
         'max_recording_mins': 35,
-        'n_recordings': 1500,
+        'n_recordings': 3000,
     }]
 
     clean_params = [
@@ -68,46 +69,47 @@ def get_grid_param_list():
 
     preproc_params = dictlistprod({
         'sec_to_cut': [60],
-        'duration_recording_mins': [3],
+        'duration_recording_mins': [20],
         'sampling_freq': [100],
         'divisor': [10],
     })
 
-    car_defaults = {
-        'car': False,
-        'minusa1a2': False,
-        'cara1a2': False,
-        'a1a2car': False,
-    }
-
-    car_variants = [
-        {},
-    ]
-
-    car_params = product_of_list_of_lists_of_dicts(
-        [[car_defaults], car_variants])
-
+    # this differentiates train/test also.
     split_params = dictlistprod({
-        'test_on_eval': [False],
-        'n_folds': [10],
-        'i_test_fold': [0,1,2,3,4,5,6,7,8,9],
-        'shuffle': [False],
+        'test_on_eval': [True],
+        'n_folds': [5],
+        'i_test_fold': [4],
+        'shuffle': [True],
     })
 
     model_params = [
+    # {
+    #     'input_time_length': 1200,
+    #     'final_conv_length': 35,
+    #     'model_name': 'shallow',
+    #     'n_start_chans': 40,
+    #     'n_chan_factor': None,
+    # },
+    # {
+    #     'input_time_length': 1200,
+    #     'final_conv_length': 1,
+    #     'model_name': 'deep',
+    #     'n_start_chans': 25,
+    #     'n_chan_factor': 2,
+    # },
     {
-        'input_time_length': 1200,
-        'final_conv_length': 35,
-        'model_name': 'shallow',
-        'n_start_chans': 40,
+        'input_time_length': 6000,
+        'final_conv_length': None,
+        'model_name': '3path',
+        'n_start_chans': None,
         'n_chan_factor': None,
     },
     {
         'input_time_length': 1200,
-        'final_conv_length': 1,
-        'model_name': 'deep',
-        'n_start_chans': 25,
-        'n_chan_factor': 2,
+        'final_conv_length': None,
+        'model_name': '3path',
+        'n_start_chans': None,
+        'n_chan_factor': None,
     },
     ]
     model_constraint_params = dictlistprod({
@@ -120,20 +122,16 @@ def get_grid_param_list():
         'sgdr': False,
         'momentum': None,
         'init_lr': 1e-3
-    },{
-        'sgdr': False,
-        'momentum': None,
-        'init_lr': 1e-4
-    }
+    },
     ]
 
-    sgdr_params = dictlistprod({
-        'sgdr': [True],
-        'init_lr': [0.1,0.01],
-        'momentum': [0.9],
-    })
+    #sgdr_params = dictlistprod({
+        # 'sgdr': [True],
+        # 'init_lr': [0.1,0.01],
+        # 'momentum': [0.9],
+    #})
 
-    optim_params = adam_params + sgdr_params
+    optim_params = adam_params #+ sgdr_params
 
     iterator_params = [{
         'batch_size':  64
@@ -150,7 +148,6 @@ def get_grid_param_list():
         load_params,
         clean_params,
         preproc_params,
-        car_params,
         split_params,
         model_params,
         optim_params,
@@ -290,10 +287,6 @@ def run_exp(test_on_eval, max_recording_mins, n_recordings,
             sec_to_cut, duration_recording_mins, max_abs_val,
             shrink_val,
             sampling_freq,
-            car,
-            minusa1a2,
-            cara1a2,
-            a1a2car,
             divisor,
             n_folds, i_test_fold,
             shuffle,
@@ -327,24 +320,6 @@ def run_exp(test_on_eval, max_recording_mins, n_recordings,
                                                                 axis=1,
                                                                 filter='kaiser_fast'),
                                                sampling_freq))
-    if car:
-        preproc_functions.append(lambda data, fs: (
-            data - np.mean(data, axis=0, keepdims=True), fs))
-    if minusa1a2:
-        preproc_functions.append(lambda data, fs: (
-            data - np.mean(data[:2], axis=0, keepdims=True), fs))
-    if cara1a2:
-        preproc_functions.append(lambda data, fs: (
-            data - np.mean(data, axis=0, keepdims=True), fs))
-        preproc_functions.append(lambda data, fs: (
-            data - np.mean(data[:2], axis=0, keepdims=True), fs))
-    if a1a2car:
-        preproc_functions.append(lambda data, fs: (
-            data - np.mean(data[:2], axis=0, keepdims=True), fs))
-        preproc_functions.append(lambda data, fs: (
-            data - np.mean(data, axis=0, keepdims=True), fs))
-
-
 
     if divisor is not None:
         preproc_functions.append(lambda data, fs: (data / divisor, fs))
@@ -409,9 +384,27 @@ def run_exp(test_on_eval, max_recording_mins, n_recordings,
                          n_filters_3 = int(n_start_chans * (n_chan_factor ** 2.0)),
                          n_filters_4 = int(n_start_chans * (n_chan_factor ** 3.0)),
                          final_conv_length=final_conv_length).create_network()
+    elif model_name == '3path':
+        virtual_chan_1x1_conv = True
+        mean_across_features = False
+        drop_prob = 0.5
+        n_start_filters = 10
+        early_bnorm = False
+        n_classifier_filters = 100
+        later_kernel_len = 5
+        extra_conv_stride = 4
+        # dont forget to reset n_preds_per_blabla
+        model = create_multi_start_path_net(
+            in_chans=in_chans,
+            virtual_chan_1x1_conv=virtual_chan_1x1_conv,
+            n_start_filters=n_start_filters, early_bnorm=early_bnorm,
+            later_kernel_len=later_kernel_len,
+            extra_conv_stride=extra_conv_stride,
+            mean_across_features=mean_across_features,
+            n_classifier_filters=n_classifier_filters, drop_prob=drop_prob)
 
-
-    to_dense_prediction_model(model)
+    if not model_name == '3path':
+        to_dense_prediction_model(model)
     log.info("Model:\n{:s}".format(str(model)))
     if cuda:
         model.cuda()
@@ -422,6 +415,8 @@ def run_exp(test_on_eval, max_recording_mins, n_recordings,
         test_input = test_input.cuda()
     out = model(test_input)
     n_preds_per_input = out.cpu().data.numpy().shape[2]
+    if model_name == '3path':
+        n_preds_per_input = input_time_length // 2
     log.info("{:d} predictions per input/trial".format(n_preds_per_input))
     iterator = CropsFromTrialsIterator(batch_size=batch_size,
                                        input_time_length=input_time_length,
@@ -491,10 +486,6 @@ def run(ex,
         sec_to_cut, duration_recording_mins, max_abs_val,
         shrink_val,
         sampling_freq,
-        car,
-        minusa1a2,
-        cara1a2,
-        a1a2car,
         divisor,
         n_folds, i_test_fold,
         shuffle,
