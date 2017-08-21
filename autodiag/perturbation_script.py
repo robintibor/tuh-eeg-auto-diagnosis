@@ -14,6 +14,7 @@ from autodiag.perturbation import (compute_amplitude_prediction_correlations,
     std_scaled_gaussian_perturbation,
     compute_amplitude_prediction_correlations_batchwise)
 from braindecode.visualization.perturbation import gaussian_perturbation
+from braindecode.datautil.signal_target import SignalAndTarget
 
 log = logging.getLogger(__name__)
 
@@ -81,10 +82,12 @@ if __name__ == '__main__':
     exp = ex.result
     if n_recordings is not None:
         exp.dataset.n_recordings = n_recordings
-
     X, y = exp.dataset.load()
 
-    train_set, valid_set, test_set = exp.splitter.split(X, y)
+    if hasattr(exp, 'test_dataset'):
+        train_set = SignalAndTarget(X,y)
+    else:
+        train_set, valid_set, test_set = exp.splitter.split(X, y)
 
 
     exp.model.load_state_dict(th.load(os.path.join(folder, 'model_params.pkl')))
@@ -94,7 +97,9 @@ if __name__ == '__main__':
     train_X_batches = np.concatenate(list(zip(*train_batches))[0]).astype(np.float32)
     train_y_batches = np.concatenate(list(zip(*train_batches))[1])
     del X,y
-    del train_set, valid_set, test_set
+    del train_set
+    if not hasattr(exp, 'test_dataset'):
+        del valid_set, test_set
 
     model_without_softmax = nn.Sequential()
     for name, module in exp.model.named_children():
@@ -104,7 +109,7 @@ if __name__ == '__main__':
 
     pred_fn = lambda x: var_to_np(
         th.mean(model_without_softmax(np_to_var(x).cuda()), dim=2)[:, :, 0, 0])
-
+    
     log.info("Gaussian perturbation...")
     run_save_for_gaussian(
         pred_fn, train_X_batches, n_iterations, train_y_batches, folder)

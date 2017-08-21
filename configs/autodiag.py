@@ -92,6 +92,20 @@ def get_grid_param_list():
     #     'n_start_chans': 40,
     #     'n_chan_factor': None,
     # },
+    # {
+    #     'input_time_length': 6000,
+    #     'final_conv_length': 1,
+    #     'model_name': 'deep',
+    #     'n_start_chans': 25,
+    #     'n_chan_factor': 2,
+    # },
+    {
+        'input_time_length': 6000,
+        'final_conv_length': 1,
+        'model_name': 'deep',
+        'n_start_chans': 25,
+        'n_chan_factor': 2,
+    },
     {
         'input_time_length': 6000,
         'final_conv_length': 1,

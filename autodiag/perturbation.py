@@ -218,20 +218,20 @@ def compute_amplitude_prediction_correlations_batchwise(
             fft_input = np.fft.rfft(this_examples, axis=2).astype(np.complex64)
             amps = np.abs(fft_input).astype(np.float32)
             phases = np.angle(fft_input).astype(np.float32)
-            log.info("Sample perturbation...")
+            #log.info("Sample perturbation...")
             perturbation = perturb_fn(amps, rng).astype(np.float32)
-            log.info("Compute new amplitudes...")
+            #log.info("Compute new amplitudes...")
             # do not allow perturbation to make amplitudes go below
             # zero
             perturbation = np.maximum(-amps, perturbation)
             new_amps = amps + perturbation
             new_amps = new_amps.astype(np.float32)
-            log.info("Compute new  complex inputs...")
+            #log.info("Compute new  complex inputs...")
             new_complex = _amplitude_phase_to_complex(new_amps, phases).astype(
                 np.complex64)
-            log.info("Compute new real inputs...")
+            #log.info("Compute new real inputs...")
             new_in = np.fft.irfft(new_complex, axis=2).astype(np.float32)
-            log.info("Compute new predictions...")
+            #log.info("Compute new predictions...")
             new_preds_arr = pred_fn(new_in)
             if original_y is not None:
                 new_pred_labels = np.argmax(new_preds_arr, axis=1)
