@@ -68,7 +68,7 @@ class DiagnosisSet(object):
         self.preproc_functions = preproc_functions
         self.train_or_eval = train_or_eval
 
-    def load(self):
+    def load(self, only_return_labels=False):
         log.info("Read file names")
         all_file_names, labels = get_all_sorted_file_names_and_labels(
             train_or_eval=self.train_or_eval)
@@ -83,6 +83,8 @@ class DiagnosisSet(object):
         else:
             cleaned_file_names = np.array(all_file_names)
             cleaned_labels = labels
+        if only_return_labels:
+            return cleaned_labels
         X = []
         y = []
         n_files = len(cleaned_file_names[:self.n_recordings])

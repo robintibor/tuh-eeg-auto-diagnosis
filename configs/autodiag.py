@@ -5,6 +5,7 @@ os.sys.path.insert(0, '/home/schirrmr/braindecode/code/braindecode/')
 os.sys.path.insert(0, '/home/schirrmr/code/auto-diagnosis/')
 import logging
 import time
+from copy import copy
 
 import numpy as np
 import resampy
@@ -48,7 +49,7 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/final-eval/',
+        'save_folder': './data/models/pytorch/auto-diag/less-minutes/',#final-eval
         'only_return_exp': False,
     }]
 
@@ -69,7 +70,8 @@ def get_grid_param_list():
 
     preproc_params = dictlistprod({
         'sec_to_cut': [60],
-        'duration_recording_mins': [20],
+        'duration_recording_mins': [1,2,4,8,16],#[20],
+        'test_recording_mins': [20],
         'sampling_freq': [100],
         'divisor': [10],
     })
@@ -84,54 +86,56 @@ def get_grid_param_list():
 
     model_params = [
     # {
-    #     'input_time_length': 1200,
+    #     'input_time_length': 6000,
     #     'final_conv_length': 35,
     #     'model_name': 'shallow',
     #     'n_start_chans': 40,
     #     'n_chan_factor': None,
     # },
-    # {
-    #     'input_time_length': 1200,
-    #     'final_conv_length': 1,
-    #     'model_name': 'deep',
-    #     'n_start_chans': 25,
-    #     'n_chan_factor': 2,
-    # },
     {
         'input_time_length': 6000,
-        'final_conv_length': None,
-        'model_name': '3path',
-        'n_start_chans': None,
-        'n_chan_factor': None,
+        'final_conv_length': 1,
+        'model_name': 'deep',
+        'n_start_chans': 25,
+        'n_chan_factor': 2,
     },
-    {
-        'input_time_length': 1200,
-        'final_conv_length': None,
-        'model_name': '3path',
-        'n_start_chans': None,
-        'n_chan_factor': None,
-    },
+    # {
+    #     'input_time_length': 6000,
+    #     'final_conv_length': None,
+    #     'model_name': '3path',
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    # },
+    # {
+    #     'input_time_length': 1200,
+    #     'final_conv_length': None,
+    #     'model_name': '3path',
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    # },
     ]
     model_constraint_params = dictlistprod({
-        'model_constraint': ['defaultnorm',],#None
+        'model_constraint': ['defaultnorm',],
 
     })
 
     adam_params = [
         {
+        'optim_name': 'adam',
         'sgdr': False,
         'momentum': None,
         'init_lr': 1e-3
     },
     ]
 
-    #sgdr_params = dictlistprod({
-        # 'sgdr': [True],
-        # 'init_lr': [0.1,0.01],
-        # 'momentum': [0.9],
-    #})
+    # sgdr_params = dictlistprod({
+    #     'optim_name': ['adam'],
+    #      'sgdr': [True],
+    #      'init_lr': [0.1,0.01,0.001],
+    #      'momentum': [None],
+    # })
 
-    optim_params = adam_params #+ sgdr_params
+    optim_params = adam_params# + sgdr_params
 
     iterator_params = [{
         'batch_size':  64
@@ -283,7 +287,9 @@ def shrink_spikes(example, threshold, axis, n_window):
     return cleaned_example
 
 
-def run_exp(test_on_eval, max_recording_mins, n_recordings,
+def run_exp(test_on_eval, max_recording_mins,
+            test_recording_mins,
+            n_recordings,
             sec_to_cut, duration_recording_mins, max_abs_val,
             shrink_val,
             sampling_freq,
@@ -294,6 +300,7 @@ def run_exp(test_on_eval, max_recording_mins, n_recordings,
             n_start_chans, n_chan_factor,
             input_time_length, final_conv_length,
             model_constraint,
+            optim_name,
             sgdr,
             init_lr,
             momentum,
@@ -329,14 +336,27 @@ def run_exp(test_on_eval, max_recording_mins, n_recordings,
                            preproc_functions=preproc_functions,
                            train_or_eval='train')
     if test_on_eval:
+        if test_recording_mins is None:
+            test_recording_mins = duration_recording_mins
+        test_preproc_functions = copy(preproc_functions)
+        test_preproc_functions[1] = lambda data, fs: (
+            data[:, :int(test_recording_mins * 60 * fs)], fs)
         test_dataset = DiagnosisSet(n_recordings=n_recordings,
                                 max_recording_mins=None,
-                                preproc_functions=preproc_functions,
+                                preproc_functions=test_preproc_functions,
                                 train_or_eval='eval')
     if not only_return_exp:
         X,y = dataset.load()
+        max_shape = np.max([list(x.shape) for x in X],
+                           axis=0)
+        assert max_shape[1] == int(duration_recording_mins *
+                                   sampling_freq * 60)
         if test_on_eval:
             test_X, test_y = test_dataset.load()
+            max_shape = np.max([list(x.shape) for x in test_X],
+                               axis=0)
+            assert max_shape[1] == int(test_recording_mins *
+                                       sampling_freq * 60)
     if not test_on_eval:
         splitter = TrainValidTestSplitter(n_folds, i_test_fold,
                                           shuffle=shuffle)
@@ -421,16 +441,18 @@ def run_exp(test_on_eval, max_recording_mins, n_recordings,
     iterator = CropsFromTrialsIterator(batch_size=batch_size,
                                        input_time_length=input_time_length,
                                        n_preds_per_input=n_preds_per_input)
-
-    if sgdr is False:
+    if optim_name == 'adam':
         optimizer = optim.Adam(model.parameters(), lr=init_lr)
     else:
+        assert optim_name == 'sgd'
+        optimizer = optim.SGD(model.parameters(), momentum=momentum,
+                        lr=init_lr)
+    if sgdr:
         n_batches = sum(
             [1 for _ in iterator.get_batches(train_set, shuffle=False)])
-        sgd = optim.SGD(model.parameters(), momentum=momentum,
-                              lr=init_lr)
+
         optimizer = ScheduledOptimizer(CosineWithWarmRestarts(
-            sgd, batch_period=max_epochs * n_batches, base_lr=init_lr))
+            optimizer, batch_period=max_epochs * n_batches, base_lr=init_lr))
 
     loss_function = lambda preds, targets: F.nll_loss(
         th.mean(preds, dim=2)[:,:,0], targets)
@@ -483,7 +505,9 @@ def save_torch_artifact(ex, obj, filename):
 def run(ex,
         test_on_eval,
         max_recording_mins, n_recordings,
-        sec_to_cut, duration_recording_mins, max_abs_val,
+        sec_to_cut, duration_recording_mins,
+        test_recording_mins,
+        max_abs_val,
         shrink_val,
         sampling_freq,
         divisor,
@@ -492,6 +516,7 @@ def run(ex,
         model_name, input_time_length, final_conv_length,
         n_start_chans, n_chan_factor,
         model_constraint,
+        optim_name,
         sgdr, init_lr, momentum,
         batch_size, max_epochs,
         save_predictions,
@@ -522,10 +547,15 @@ def run(ex,
         save_pkl_artifact(ex, exp.before_stop_df, 'before_stop_df.pkl')
         save_torch_artifact(ex, exp.model.state_dict(), 'model_params.pkl')
         if save_predictions:
+            exp.model.eval()
             for setname in ('train', 'valid', 'test'):
                 log.info("Compute and save predictions for {:s}...".format(
                     setname))
                 dataset = exp.datasets[setname]
+                log.info("Save labels for {:s}...".format(
+                    setname))
+                save_npy_artifact(ex, dataset.y,
+                                  '{:s}_trial_labels.npy'.format(setname))
                 preds_per_batch = [var_to_np(exp.model(np_to_var(b[0]).cuda()))
                           for b in exp.iterator.get_batches(dataset, shuffle=False)]
                 preds_per_trial = compute_preds_per_trial(

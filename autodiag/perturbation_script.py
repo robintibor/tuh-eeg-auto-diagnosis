@@ -11,7 +11,8 @@ from torch import nn
 from hyperoptim.rerun import rerun_exp
 from braindecode.torch_ext.util import var_to_np, np_to_var
 from autodiag.perturbation import (compute_amplitude_prediction_correlations,
-    std_scaled_gaussian_perturbation)
+    std_scaled_gaussian_perturbation,
+    compute_amplitude_prediction_correlations_batchwise)
 from braindecode.visualization.perturbation import gaussian_perturbation
 
 log = logging.getLogger(__name__)
@@ -34,10 +35,11 @@ def fix_file_for_load_exp(folder):
 
 def run_save_for_gaussian(
         pred_fn, train_X_batches, n_iterations, train_y_batches, folder):
-    amp_pred_corrs, orig_acc, new_accs = compute_amplitude_prediction_correlations(
-        pred_fn, train_X_batches,  n_iterations=n_iterations, batch_size=32,
-        perturb_fn=gaussian_perturbation,
-        original_y=train_y_batches)
+    amp_pred_corrs, orig_acc, new_accs = (
+        compute_amplitude_prediction_correlations_batchwise(
+            pred_fn, train_X_batches,  n_iterations=n_iterations, batch_size=32,
+            perturb_fn=gaussian_perturbation,
+            original_y=train_y_batches))
 
     save_filename = os.path.join(folder, 'gaussian.perturbation.{:d}.npy'.format(
         n_iterations
@@ -48,6 +50,7 @@ def run_save_for_gaussian(
 
 def run_save_for_scaled(
         pred_fn, train_X_batches, n_iterations, train_y_batches, folder):
+    assert False
     amp_pred_corrs, orig_acc, new_accs = compute_amplitude_prediction_correlations(
         pred_fn, train_X_batches,  n_iterations=n_iterations, batch_size=32,
         perturb_fn=std_scaled_gaussian_perturbation,
@@ -105,7 +108,7 @@ if __name__ == '__main__':
     log.info("Gaussian perturbation...")
     run_save_for_gaussian(
         pred_fn, train_X_batches, n_iterations, train_y_batches, folder)
-    log.info("Scaled (gaussian) perturbation...")
-    run_save_for_scaled(
-        pred_fn, train_X_batches, n_iterations, train_y_batches, folder)
+    #log.info("Scaled (gaussian) perturbation...")
+    #run_save_for_scaled(
+    #    pred_fn, train_X_batches, n_iterations, train_y_batches, folder)
 
