@@ -126,6 +126,8 @@ def compute_amplitude_prediction_correlations(pred_fn, examples, n_iterations,
         amp_pred_corr = wrap_reshape_apply_fn(corr, perturbation[:, :, :, 0],
                                               diff_preds,
                                               axis_a=(0,), axis_b=(0))
+        print("max corr", np.max(amp_pred_corr))
+        print("min corr", np.min(amp_pred_corr))
         amp_pred_corrs.append(amp_pred_corr)
     if original_y is not None:
         return amp_pred_corrs, orig_accuracy, new_accuracies
@@ -282,8 +284,9 @@ def compute_amplitude_prediction_correlations_batchwise(
         assert len(original_y) == len(all_new_pred_labels)
         log.info("New accuracy: {:.2f}...".format(new_accuracy))
         new_accuracies.append(new_accuracy)
-        divisor = np.outer(var_perturb_so_far, var_pred_diff_so_far).reshape(
-            *var_perturb_so_far.shape + var_pred_diff_so_far.shape).squeeze()
+        divisor = np.outer(np.sqrt(var_perturb_so_far),
+                           np.sqrt(var_pred_diff_so_far)).reshape(
+            (var_perturb_so_far.shape + var_pred_diff_so_far.shape)).squeeze()
         this_amp_pred_corr = covariance_so_far / divisor
         amp_pred_corrs.append(this_amp_pred_corr)
     if original_y is not None:

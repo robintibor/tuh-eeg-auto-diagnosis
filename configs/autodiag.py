@@ -8,11 +8,12 @@ import time
 from copy import copy
 
 import numpy as np
+from numpy.random import RandomState
 import resampy
 from torch import optim
 import torch.nn.functional as F
 import torch as th
-from numpy.random import RandomState
+from torch.nn.functional import elu
 
 from hyperoptim.parse import cartesian_dict_of_lists_product, \
     product_of_list_of_lists_of_dicts
@@ -32,6 +33,7 @@ from braindecode.datautil.iterators import get_balanced_batches
 from braindecode.datautil.splitters import concatenate_sets
 from braindecode.torch_ext.constraints import MaxNormDefaultConstraint
 from braindecode.torch_ext.util import var_to_np
+from braindecode.torch_ext.functions import identity
 
 from autodiag.dataset import DiagnosisSet
 from autodiag.sgdr import CosineWithWarmRestarts, ScheduledOptimizer
@@ -49,7 +51,7 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/less-minutes/',#final-eval
+        'save_folder': './data/models/pytorch/auto-diag/final-smac/',#final-eval
         'only_return_exp': False,
     }]
 
@@ -70,8 +72,8 @@ def get_grid_param_list():
 
     preproc_params = dictlistprod({
         'sec_to_cut': [60],
-        'duration_recording_mins': [1,2,4,8,16],#[20],
-        'test_recording_mins': [20],
+        'duration_recording_mins': [20],
+        'test_recording_mins': [None],
         'sampling_freq': [100],
         'divisor': [10],
     })
@@ -101,17 +103,51 @@ def get_grid_param_list():
     # },
     {
         'input_time_length': 6000,
-        'final_conv_length': 1,
-        'model_name': 'deep',
-        'n_start_chans': 25,
-        'n_chan_factor': 2,
+        'model_name': 'deep_smac',
+        'final_conv_length': None,
+        'n_start_chans': None,
+        'n_chan_factor': None,
+        'model_constraint': None,
+    },
+    {
+        'input_time_length': 1200,
+        'model_name': 'deep_smac',
+        'final_conv_length': None,
+        'n_start_chans': None,
+        'n_chan_factor': None,
+        'model_constraint': None,
     },
     {
         'input_time_length': 6000,
-        'final_conv_length': 1,
-        'model_name': 'deep',
-        'n_start_chans': 25,
-        'n_chan_factor': 2,
+        'model_name': 'deep_smac_bnorm',
+        'final_conv_length': None,
+        'n_start_chans': None,
+        'n_chan_factor': None,
+        'model_constraint': None,
+    },
+    {
+        'input_time_length': 1200,
+        'model_name': 'deep_smac_bnorm',
+        'final_conv_length': None,
+        'n_start_chans': None,
+        'n_chan_factor': None,
+        'model_constraint': None,
+    },
+    {
+        'input_time_length': 6000,
+        'model_name': 'shallow_smac',
+        'final_conv_length': None,
+        'n_start_chans': None,
+        'n_chan_factor': None,
+        'model_constraint': None,
+    },
+    {
+        'input_time_length': 1200,
+        'model_name': 'shallow_smac',
+        'final_conv_length': None,
+        'n_start_chans': None,
+        'n_chan_factor': None,
+        'model_constraint': None,
     },
     # {
     #     'input_time_length': 6000,
@@ -128,10 +164,6 @@ def get_grid_param_list():
     #     'n_chan_factor': None,
     # },
     ]
-    model_constraint_params = dictlistprod({
-        'model_constraint': ['defaultnorm',],
-
-    })
 
     adam_params = [
         {
@@ -171,7 +203,6 @@ def get_grid_param_list():
         optim_params,
         iterator_params,
         stop_params,
-        model_constraint_params
     ])
 
     return grid_params
@@ -418,6 +449,83 @@ def run_exp(test_on_eval, max_recording_mins,
                          n_filters_3 = int(n_start_chans * (n_chan_factor ** 2.0)),
                          n_filters_4 = int(n_start_chans * (n_chan_factor ** 3.0)),
                          final_conv_length=final_conv_length).create_network()
+    elif model_name == 'deep_smac' or 'deep_smac_bnorm':
+        if 'deep_smac':
+            do_batch_norm = False
+        else:
+            do_batch_norm = True
+        double_time_convs = False
+        drop_prob = 0.244445
+        filter_length_2 = 12
+        filter_length_3 = 14
+        filter_length_4 = 12
+        filter_time_length = 21
+        final_conv_length = 1
+        first_nonlin = elu
+        first_pool_mode = 'mean'
+        first_pool_nonlin = identity
+        later_nonlin = elu
+        later_pool_mode = 'mean'
+        later_pool_nonlin = identity
+        n_filters_factor = 1.679066
+        n_filters_start = 32
+        pool_time_length = 1
+        pool_time_stride = 2
+        split_first_layer = True
+        n_chan_factor = n_filters_factor
+        n_start_chans = n_filters_start
+        model = Deep4Net(in_chans, n_classes,
+                 n_filters_time=n_start_chans,
+                 n_filters_spat=n_start_chans,
+                 input_time_length=input_time_length,
+                 n_filters_2=int(n_start_chans * n_chan_factor),
+                 n_filters_3=int(n_start_chans * (n_chan_factor ** 2.0)),
+                 n_filters_4=int(n_start_chans * (n_chan_factor ** 3.0)),
+                 final_conv_length=final_conv_length,
+                 batch_norm=do_batch_norm,
+                 double_time_convs=double_time_convs,
+                 drop_prob=drop_prob,
+                 filter_length_2=filter_length_2,
+                 filter_length_3=filter_length_3,
+                 filter_length_4=filter_length_4,
+                 filter_time_length=filter_time_length,
+                 first_nonlin=first_nonlin,
+                 first_pool_mode=first_pool_mode,
+                 first_pool_nonlin=first_pool_nonlin,
+                 later_nonlin=later_nonlin,
+                 later_pool_mode=later_pool_mode,
+                 later_pool_nonlin=later_pool_nonlin,
+                 pool_time_length=pool_time_length,
+                 pool_time_stride=pool_time_stride,
+                 split_first_layer=split_first_layer).create_network()
+    elif model_name == 'shallow_smac':
+        conv_nonlin = identity
+        do_batch_norm = True
+        drop_prob = 0.328794
+        filter_time_length = 56
+        final_conv_length = 22
+        n_filters_spat = 73
+        n_filters_time = 24
+        pool_mode = 'max'
+        pool_nonlin = identity
+        pool_time_length = 84
+        pool_time_stride = 3
+        split_first_layer = True
+        model = ShallowFBCSPNet(in_chans=in_chans, n_classes=n_classes,
+                                n_filters_time=n_filters_time,
+                                n_filters_spat=n_filters_spat,
+                                input_time_length=input_time_length,
+                                final_conv_length=final_conv_length,
+                                conv_nonlin=conv_nonlin,
+                                batch_norm=do_batch_norm,
+                                drop_prob=drop_prob,
+                                filter_time_length=filter_time_length,
+                                pool_mode=pool_mode,
+                                pool_nonlin=pool_nonlin,
+                                pool_time_length=pool_time_length,
+                                pool_time_stride=pool_time_stride,
+                                split_first_layer=split_first_layer,
+                                ).create_network()
     elif model_name == '3path':
         virtual_chan_1x1_conv = True
         mean_across_features = False
@@ -472,6 +580,7 @@ def run_exp(test_on_eval, max_recording_mins,
         th.mean(preds, dim=2)[:,:,0], targets)
 
     if model_constraint is not None:
+        assert model_constraint == 'defaultnorm'
         model_constraint = MaxNormDefaultConstraint()
     monitors = [LossMonitor(), MisclassMonitor(col_suffix='sample_misclass'),
                 CroppedDiagnosisMonitor(input_time_length, n_preds_per_input),

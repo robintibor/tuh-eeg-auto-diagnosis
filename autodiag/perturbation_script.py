@@ -87,19 +87,24 @@ if __name__ == '__main__':
     if hasattr(exp, 'test_dataset'):
         train_set = SignalAndTarget(X,y)
     else:
-        train_set, valid_set, test_set = exp.splitter.split(X, y)
-
+        train_set, _, _ = exp.splitter.split(X, y)
 
     exp.model.load_state_dict(th.load(os.path.join(folder, 'model_params.pkl')))
     exp.model.eval();
 
-    train_batches = list(exp.iterator.get_batches(train_set, shuffle=False))
-    train_X_batches = np.concatenate(list(zip(*train_batches))[0]).astype(np.float32)
-    train_y_batches = np.concatenate(list(zip(*train_batches))[1])
+    train_X_batches = []
+    train_y_batches = []
+    log.info("Create batches...")
+    for batch in exp.iterator.get_batches(train_set, shuffle=False):
+        train_X_batches.append(batch[0].astype(np.float32))
+        train_y_batches.append(batch[1])
+    log.info("Delete unnecessary variables...")
     del X,y
     del train_set
-    if not hasattr(exp, 'test_dataset'):
-        del valid_set, test_set
+    log.info("Concatenates batches to array...")
+    train_X_batches = np.concatenate(train_X_batches, axis=0)
+    train_y_batches = np.concatenate(train_y_batches)
+
 
     model_without_softmax = nn.Sequential()
     for name, module in exp.model.named_children():
