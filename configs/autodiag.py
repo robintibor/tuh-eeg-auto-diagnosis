@@ -14,6 +14,7 @@ from torch import optim
 import torch.nn.functional as F
 import torch as th
 from torch.nn.functional import elu
+from torch import nn
 
 from hyperoptim.parse import cartesian_dict_of_lists_product, \
     product_of_list_of_lists_of_dicts
@@ -21,6 +22,7 @@ from hyperoptim.util import save_pkl_artifact, save_npy_artifact
 from braindecode.datautil.signal_target import SignalAndTarget
 from braindecode.torch_ext.util import np_to_var
 from braindecode.torch_ext.util import set_random_seeds
+from braindecode.torch_ext.modules import Expression
 from braindecode.experiments.experiment import Experiment
 from braindecode.datautil.iterators import CropsFromTrialsIterator
 from braindecode.experiments.monitors import (RuntimeMonitor, LossMonitor,
@@ -56,7 +58,7 @@ def get_grid_param_list():
     }]
 
     save_params = [{
-        'save_predictions': False,
+        'save_predictions': True,
         'save_crop_predictions': False,
     }]
 
@@ -88,58 +90,96 @@ def get_grid_param_list():
 
     model_params = [
     # {
-    #     'input_time_length': 6000,
-    #     'final_conv_length': 35,
-    #     'model_name': 'shallow',
-    #     'n_start_chans': 40,
+    #     'input_time_length': 1200,
+    #     'final_conv_length': None,
+    #     'model_name': 'linear',
+    #     'n_start_chans': None,
     #     'n_chan_factor': None,
+    #     'model_constraint': 'defaultnorm',
     # },
+    # {
+    #     'input_time_length': 1200,
+    #     'final_conv_length': None,
+    #     'model_name': 'linear',
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
+    # },
+    {
+        'input_time_length': 6000,
+        'final_conv_length': 35,
+        'model_name': 'shallow',
+        'n_start_chans': 40,
+        'n_chan_factor': None,
+        'model_constraint': 'defaultnorm',
+        'save_folder': './data/models/pytorch/auto-diag/final-eval/',#final-eval
+    },
+    {
+        'input_time_length': 1200,
+        'final_conv_length': 35,
+        'model_name': 'shallow',
+        'n_start_chans': 40,
+        'n_chan_factor': None,
+        'model_constraint': 'defaultnorm',
+        'save_folder': './data/models/pytorch/auto-diag/final-eval/',#final-eval
+    },
     # {
     #     'input_time_length': 6000,
     #     'final_conv_length': 1,
     #     'model_name': 'deep',
     #     'n_start_chans': 25,
     #     'n_chan_factor': 2,
+    #     'model_constraint': 'defaultnorm',
+    # },
+    {
+        'input_time_length': 1200,
+        'final_conv_length': 1,
+        'model_name': 'deep',
+        'n_start_chans': 25,
+        'n_chan_factor': 2,
+        'model_constraint': 'defaultnorm',
+        'save_folder': './data/models/pytorch/auto-diag/final-eval/',#final-eval
+    },
+    # {
+    #     'input_time_length': 6000,
+    #     'model_name': 'deep_smac',
+    #     'final_conv_length': None,
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
+    # },
+    # {
+    #     'input_time_length': 1200,
+    #     'model_name': 'deep_smac',
+    #     'final_conv_length': None,
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
+    # },
+    # {
+    #     'input_time_length': 6000,
+    #     'model_name': 'deep_smac_bnorm',
+    #     'final_conv_length': None,
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
+    # },
+    # {
+    #     'input_time_length': 1200,
+    #     'model_name': 'deep_smac_bnorm',
+    #     'final_conv_length': None,
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
     # },
     {
         'input_time_length': 6000,
-        'model_name': 'deep_smac',
-        'final_conv_length': None,
-        'n_start_chans': None,
-        'n_chan_factor': None,
-        'model_constraint': None,
-    },
-    {
-        'input_time_length': 1200,
-        'model_name': 'deep_smac',
-        'final_conv_length': None,
-        'n_start_chans': None,
-        'n_chan_factor': None,
-        'model_constraint': None,
-    },
-    {
-        'input_time_length': 6000,
-        'model_name': 'deep_smac_bnorm',
-        'final_conv_length': None,
-        'n_start_chans': None,
-        'n_chan_factor': None,
-        'model_constraint': None,
-    },
-    {
-        'input_time_length': 1200,
-        'model_name': 'deep_smac_bnorm',
-        'final_conv_length': None,
-        'n_start_chans': None,
-        'n_chan_factor': None,
-        'model_constraint': None,
-    },
-    {
-        'input_time_length': 6000,
         'model_name': 'shallow_smac',
         'final_conv_length': None,
         'n_start_chans': None,
         'n_chan_factor': None,
         'model_constraint': None,
+        'save_folder': './data/models/pytorch/auto-diag/final-smac/',#final-eval
     },
     {
         'input_time_length': 1200,
@@ -148,6 +188,7 @@ def get_grid_param_list():
         'n_start_chans': None,
         'n_chan_factor': None,
         'model_constraint': None,
+        'save_folder': './data/models/pytorch/auto-diag/final-smac/',#final-eval
     },
     # {
     #     'input_time_length': 6000,
@@ -449,10 +490,11 @@ def run_exp(test_on_eval, max_recording_mins,
                          n_filters_3 = int(n_start_chans * (n_chan_factor ** 2.0)),
                          n_filters_4 = int(n_start_chans * (n_chan_factor ** 3.0)),
                          final_conv_length=final_conv_length).create_network()
-    elif model_name == 'deep_smac' or 'deep_smac_bnorm':
-        if 'deep_smac':
+    elif (model_name == 'deep_smac') or (model_name == 'deep_smac_bnorm'):
+        if model_name == 'deep_smac':
             do_batch_norm = False
         else:
+            assert model_name == 'deep_smac_bnorm'
             do_batch_norm = True
         double_time_convs = False
         drop_prob = 0.244445
@@ -526,6 +568,12 @@ def run_exp(test_on_eval, max_recording_mins,
                                 pool_time_stride=pool_time_stride,
                                 split_first_layer=split_first_layer,
                                 ).create_network()
+    elif model_name == 'linear':
+        model = nn.Sequential()
+        model.add_module("conv_classifier",
+                         nn.Conv2d(in_chans, n_classes, (600,1)))
+        model.add_module('softmax', nn.LogSoftmax())
+        model.add_module('squeeze', Expression(lambda x: x.squeeze(3)))
     elif model_name == '3path':
         virtual_chan_1x1_conv = True
         mean_across_features = False
@@ -544,7 +592,8 @@ def run_exp(test_on_eval, max_recording_mins,
             extra_conv_stride=extra_conv_stride,
             mean_across_features=mean_across_features,
             n_classifier_filters=n_classifier_filters, drop_prob=drop_prob)
-
+    else:
+        assert False, "unknown model name {:s}".format(model_name)
     if not model_name == '3path':
         to_dense_prediction_model(model)
     log.info("Model:\n{:s}".format(str(model)))
@@ -556,6 +605,7 @@ def run_exp(test_on_eval, max_recording_mins,
     if cuda:
         test_input = test_input.cuda()
     out = model(test_input)
+    log.info("Out shape: {:s}".format(str(out.cpu().data.numpy().shape)))
     n_preds_per_input = out.cpu().data.numpy().shape[2]
     if model_name == '3path':
         n_preds_per_input = input_time_length // 2
