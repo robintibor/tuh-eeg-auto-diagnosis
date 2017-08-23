@@ -30,7 +30,7 @@ from braindecode.experiments.monitors import (RuntimeMonitor, LossMonitor,
 from braindecode.experiments.stopcriteria import MaxEpochs
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.models.deep4 import Deep4Net
-from braindecode.models.util import to_dense_prediction_model
+from braindecode.models.util import to_dense_prediction_model_fixed
 from braindecode.datautil.iterators import get_balanced_batches
 from braindecode.datautil.splitters import concatenate_sets
 from braindecode.torch_ext.constraints import MaxNormDefaultConstraint
@@ -53,7 +53,7 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/final-smac/',#final-eval
+        'save_folder': './data/models/pytorch/auto-diag/final-smac-dense-fixed/',#final-eval
         'only_return_exp': False,
     }]
 
@@ -105,91 +105,99 @@ def get_grid_param_list():
     #     'n_chan_factor': None,
     #     'model_constraint': None,
     # },
-    {
-        'input_time_length': 6000,
-        'final_conv_length': 35,
-        'model_name': 'shallow',
-        'n_start_chans': 40,
-        'n_chan_factor': None,
-        'model_constraint': 'defaultnorm',
-        'save_folder': './data/models/pytorch/auto-diag/final-eval/',#final-eval
-    },
-    {
-        'input_time_length': 1200,
-        'final_conv_length': 35,
-        'model_name': 'shallow',
-        'n_start_chans': 40,
-        'n_chan_factor': None,
-        'model_constraint': 'defaultnorm',
-        'save_folder': './data/models/pytorch/auto-diag/final-eval/',#final-eval
-    },
     # {
     #     'input_time_length': 6000,
-    #     'final_conv_length': 1,
-    #     'model_name': 'deep',
-    #     'n_start_chans': 25,
-    #     'n_chan_factor': 2,
+    #     'final_conv_length': 35,
+    #     'model_name': 'shallow',
+    #     'n_start_chans': 40,
+    #     'n_chan_factor': None,
     #     'model_constraint': 'defaultnorm',
+    #     'save_folder': './data/models/pytorch/auto-diag/final-eval/',#final-eval
+    # },
+    # {
+    #     'input_time_length': 1200,
+    #     'final_conv_length': 35,
+    #     'model_name': 'shallow',
+    #     'n_start_chans': 40,
+    #     'n_chan_factor': None,
+    #     'model_constraint': 'defaultnorm',
+    #     'save_folder': './data/models/pytorch/auto-diag/final-eval/',#final-eval
     # },
     {
-        'input_time_length': 1200,
+        'input_time_length': 6000,
         'final_conv_length': 1,
         'model_name': 'deep',
         'n_start_chans': 25,
         'n_chan_factor': 2,
         'model_constraint': 'defaultnorm',
-        'save_folder': './data/models/pytorch/auto-diag/final-eval/',#final-eval
     },
-    # {
-    #     'input_time_length': 6000,
-    #     'model_name': 'deep_smac',
-    #     'final_conv_length': None,
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    # },
-    # {
-    #     'input_time_length': 1200,
-    #     'model_name': 'deep_smac',
-    #     'final_conv_length': None,
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    # },
-    # {
-    #     'input_time_length': 6000,
-    #     'model_name': 'deep_smac_bnorm',
-    #     'final_conv_length': None,
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    # },
-    # {
-    #     'input_time_length': 1200,
-    #     'model_name': 'deep_smac_bnorm',
-    #     'final_conv_length': None,
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    # },
     {
         'input_time_length': 6000,
-        'model_name': 'shallow_smac',
-        'final_conv_length': None,
-        'n_start_chans': None,
-        'n_chan_factor': None,
-        'model_constraint': None,
-        'save_folder': './data/models/pytorch/auto-diag/final-smac/',#final-eval
+        'final_conv_length': 3,
+        'model_name': 'deep',
+        'n_start_chans': 25,
+        'n_chan_factor': 2,
+        'model_constraint': 'defaultnorm',
     },
-    {
-        'input_time_length': 1200,
-        'model_name': 'shallow_smac',
-        'final_conv_length': None,
-        'n_start_chans': None,
-        'n_chan_factor': None,
-        'model_constraint': None,
-        'save_folder': './data/models/pytorch/auto-diag/final-smac/',#final-eval
-    },
+    # {
+    #     'input_time_length': 1200,
+    #     'final_conv_length': 1,
+    #     'model_name': 'deep',
+    #     'n_start_chans': 25,
+    #     'n_chan_factor': 2,
+    #     'model_constraint': 'defaultnorm',
+    #     'save_folder': './data/models/pytorch/auto-diag/final-eval/',#final-eval
+    # },
+    # {
+    #     'input_time_length': 6000,
+    #     'model_name': 'deep_smac',
+    #     'final_conv_length': None,
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
+    # },
+    # {
+    #     'input_time_length': 1200,
+    #     'model_name': 'deep_smac',
+    #     'final_conv_length': None,
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
+    # },
+    # {
+    #     'input_time_length': 6000,
+    #     'model_name': 'deep_smac_bnorm',
+    #     'final_conv_length': None,
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
+    # },
+    # {
+    #     'input_time_length': 1200,
+    #     'model_name': 'deep_smac_bnorm',
+    #     'final_conv_length': None,
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
+    # },
+    # {
+    #     'input_time_length': 6000,
+    #     'model_name': 'shallow_smac',
+    #     'final_conv_length': None,
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
+    #     'save_folder': './data/models/pytorch/auto-diag/final-smac/',#final-eval
+    # },
+    # {
+    #     'input_time_length': 1200,
+    #     'model_name': 'shallow_smac',
+    #     'final_conv_length': None,
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
+    #     'save_folder': './data/models/pytorch/auto-diag/final-smac/',#final-eval
+    # },
     # {
     #     'input_time_length': 6000,
     #     'final_conv_length': None,
@@ -595,7 +603,7 @@ def run_exp(test_on_eval, max_recording_mins,
     else:
         assert False, "unknown model name {:s}".format(model_name)
     if not model_name == '3path':
-        to_dense_prediction_model(model)
+        to_dense_prediction_model_fixed(model)
     log.info("Model:\n{:s}".format(str(model)))
     if cuda:
         model.cuda()
@@ -604,6 +612,8 @@ def run_exp(test_on_eval, max_recording_mins,
         np.ones((2, in_chans, input_time_length, 1), dtype=np.float32))
     if cuda:
         test_input = test_input.cuda()
+    log.info("In shape: {:s}".format(str(test_input.cpu().data.numpy().shape)))
+
     out = model(test_input)
     log.info("Out shape: {:s}".format(str(out.cpu().data.numpy().shape)))
     n_preds_per_input = out.cpu().data.numpy().shape[2]

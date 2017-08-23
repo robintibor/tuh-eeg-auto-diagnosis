@@ -74,7 +74,8 @@ def plot_confusion_matrix_paper(confusion_mat, p_val_vs_a=None,
                                 rotate_row_labels=90,
                                 rotate_col_labels=0,
                                 with_f1_score=False,
-                                norm_axes=(0, 1)):
+                                norm_axes=(0, 1),
+                                rotate_precision=False):
     # TODELAY: split into several functions
     # transpose to get confusion matrix same way as matlab
     confusion_mat = confusion_mat.T
@@ -243,7 +244,16 @@ def plot_confusion_matrix_paper(confusion_mat, p_val_vs_a=None,
     # n classes is also shape of matrix/size
     ax.text(-1.2, n_classes+0.2, "Specificity /\nSensitivity", ha='center', va='center',
             fontsize=13)
-    ax.text(n_classes, -1.1, "Precision", ha='center', va='center', rotation=90,  # 270,
+    if rotate_precision:
+        rotation=90
+        x_pos = -1.1
+        va = 'center'
+    else:
+        rotation=0
+        x_pos = -0.8
+        va = 'top'
+    ax.text(n_classes, x_pos, "Precision", ha='center', va=va,
+            rotation=rotation,  # 270,
             fontsize=13)
 
     return fig
