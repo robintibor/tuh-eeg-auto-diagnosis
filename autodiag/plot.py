@@ -75,7 +75,8 @@ def plot_confusion_matrix_paper(confusion_mat, p_val_vs_a=None,
                                 rotate_col_labels=0,
                                 with_f1_score=False,
                                 norm_axes=(0, 1),
-                                rotate_precision=False):
+                                rotate_precision=False,
+                                class_names_fontsize=12):
     # TODELAY: split into several functions
     # transpose to get confusion matrix same way as matlab
     confusion_mat = confusion_mat.T
@@ -233,10 +234,11 @@ def plot_confusion_matrix_paper(confusion_mat, p_val_vs_a=None,
                 verticalalignment='center', fontsize=12,
                 fontweight='bold')
 
-    plt.xticks(range(width), class_names, fontsize=12, rotation=rotate_col_labels)
+    plt.xticks(range(width), class_names, fontsize=class_names_fontsize,
+               rotation=rotate_col_labels)
     plt.yticks(np.arange(0,height), class_names,
                va='center',
-               fontsize=12, rotation=rotate_row_labels)
+               fontsize=class_names_fontsize, rotation=rotate_row_labels)
     plt.grid(False)
     plt.ylabel('Predictions', fontsize=15)
     plt.xlabel('Targets', fontsize=15)

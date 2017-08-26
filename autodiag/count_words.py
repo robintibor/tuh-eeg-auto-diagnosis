@@ -56,9 +56,10 @@ def clean_words(words):
     return cleaned_words
 
 
-def compute_counts_and_relative_frequencies(file_names, labels,
-                                            correct_mask, label):
-
+def compute_imprs_word_counts(file_names):
+    texts = extract_texts(file_names)
+    dicts = [extract_dict(t) for t in texts]
+    imprs = [d['IMPRESSION'] for d in dicts]
     # for split
     #adapted from https://stackoverflow.com/a/22178786/1469195
     # (removed capturing groups)
@@ -68,25 +69,36 @@ def compute_counts_and_relative_frequencies(file_names, labels,
                   | \w+(?:[-']\w+)*    # words w/ optional internal hyphens/apostrophe
                   | [+/\-@&*]        # special characters with meanings
                 '''
+    words = regexp_tokenize("\n".join(imprs), pattern)
+    words = clean_words(words)
+    counter = Counter(words)
+    result = namedtuple('WordResult', ['counter',
+                                       'imprs',
+                                       'words'], verbose=False)(
+        counter=counter,
+        imprs=imprs,
+        words=words,
+    )
+    return result
+
+
+def compute_counts_and_relative_frequencies(file_names, labels,
+                                            correct_mask, label):
     file_names = np.array(file_names)
     labels = np.array(labels)
     correct_and_wanted = correct_mask & (labels == label)
-    correct_texts = extract_texts(
+    correct_result = compute_imprs_word_counts(
         file_names[np.flatnonzero(correct_and_wanted)])
-    correct_dicts = [extract_dict(t) for t in correct_texts]
-    correct_imprs = [d['IMPRESSION'] for d in correct_dicts]
-    correct_words = regexp_tokenize("\n".join(correct_imprs), pattern)
-    correct_words = clean_words(correct_words)
-    correct_counter = Counter(correct_words)
+    correct_imprs = correct_result.imprs
+    correct_counter = correct_result.counter
+    correct_words = correct_result.words
 
     incorrect_and_wanted = (~correct_mask) & (labels == label)
-    incorrect_texts = extract_texts(
+    incorrect_result = compute_imprs_word_counts(
         file_names[np.flatnonzero(incorrect_and_wanted)])
-    incorrect_dicts = [extract_dict(t) for t in incorrect_texts]
-    incorrect_imprs = [d['IMPRESSION'] for d in incorrect_dicts]
-    incorrect_words = regexp_tokenize("\n".join(incorrect_imprs), pattern)
-    incorrect_words = clean_words(incorrect_words)
-    incorrect_counter = Counter(incorrect_words)
+    incorrect_imprs = incorrect_result.imprs
+    incorrect_counter = incorrect_result.counter
+    incorrect_words = incorrect_result.words
 
     freq_ratios = []
     freq_diffs = []
