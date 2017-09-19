@@ -153,13 +153,8 @@ def sample_config_params(rng, params):
 def run_exp(
         max_recording_mins, n_recordings,
         sec_to_cut, duration_recording_mins, max_abs_val,
-        max_min_threshold, max_min_expected, shrink_val,
-        max_min_remove, batch_set_zero_val, batch_set_zero_test,
+        shrink_val,
         sampling_freq,
-        low_cut_hz, high_cut_hz,
-        exp_demean, exp_standardize,
-        moving_demean, moving_standardize,
-        channel_demean, channel_standardize,
         divisor,
         n_folds, i_test_fold,
         final_conv_length,
@@ -183,6 +178,7 @@ def run_exp(
         double_time_convs,
         split_first_layer,
         do_batch_norm,
+        stride_before_pool,
         only_return_exp):
     kwargs = locals()
     for model_param in [
@@ -205,6 +201,7 @@ def run_exp(
         'double_time_convs',
         'split_first_layer',
         'do_batch_norm',
+        'stride_before_pool'
     ]:
         kwargs.pop(model_param)
     nonlin_dict = {
@@ -218,8 +215,6 @@ def run_exp(
     }
     input_time_length = 12000
 
-    # copy over from early seizure
-    # make proper
     n_classes = 2
     in_chans = 21
     cuda = True
@@ -249,7 +244,8 @@ def run_exp(
         double_time_convs=double_time_convs,
         split_first_layer=split_first_layer,
         batch_norm=do_batch_norm,
-        batch_norm_alpha=0.1).create_network()
+        batch_norm_alpha=0.1,
+        stride_before_pool=stride_before_pool).create_network()
 
     to_dense_prediction_model(model)
     if cuda:
@@ -296,20 +292,16 @@ def run_exp(
         double_time_convs=double_time_convs,
         split_first_layer=split_first_layer,
         batch_norm=do_batch_norm,
-        batch_norm_alpha=0.1).create_network()
+        batch_norm_alpha=0.1,
+        stride_before_pool=stride_before_pool).create_network()
     return common.run_exp(model=model, input_time_length=input_time_length,
                           **kwargs)
 
 
 def run(ex, max_recording_mins, n_recordings,
         sec_to_cut, duration_recording_mins, max_abs_val,
-        max_min_threshold, max_min_expected, shrink_val,
-        max_min_remove, batch_set_zero_val, batch_set_zero_test,
+        shrink_val,
         sampling_freq,
-        low_cut_hz, high_cut_hz,
-        exp_demean, exp_standardize,
-        moving_demean, moving_standardize,
-        channel_demean, channel_standardize,
         divisor,
         n_folds, i_test_fold,
         model_constraint,
@@ -333,6 +325,7 @@ def run(ex, max_recording_mins, n_recordings,
         double_time_convs,
         split_first_layer,
         do_batch_norm,
+        stride_before_pool,
         only_return_exp):
     i_test_fold = int(i_test_fold)
     kwargs = locals()

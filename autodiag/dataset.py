@@ -43,11 +43,11 @@ def load_data(fname, preproc_functions):
     return data
 
 def get_all_sorted_file_names_and_labels(train_or_eval):
-    normal_path = ('/home/gemeinl/data/normal_abnormal/normalv1.1.0/'
-        'v1.1.0/edf/{:s}/normal/'.format(train_or_eval))
+    normal_path = ('/home/gemeinl/data/normal_abnormal/normalv1.1.1/'
+        'v1.1.1/edf/{:s}/normal/'.format(train_or_eval))
     normal_file_names = read_all_file_names(normal_path, '.edf', key='time')
-    abnormal_path = ('/home/gemeinl/data/normal_abnormal/abnormalv1.1.0/'
-        'v1.1.0/edf/{:s}/abnormal/'.format(train_or_eval))
+    abnormal_path = ('/home/gemeinl/data/normal_abnormal/abnormalv1.1.1/'
+        'v1.1.1/edf/{:s}/abnormal/'.format(train_or_eval))
     abnormal_file_names = read_all_file_names(abnormal_path, '.edf', key='time')
 
     all_file_names = normal_file_names + abnormal_file_names

@@ -30,7 +30,7 @@ from braindecode.experiments.monitors import (RuntimeMonitor, LossMonitor,
 from braindecode.experiments.stopcriteria import MaxEpochs
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.models.deep4 import Deep4Net
-from braindecode.models.util import to_dense_prediction_model_fixed
+from braindecode.models.util import to_dense_prediction_model
 from braindecode.datautil.iterators import get_balanced_batches
 from braindecode.datautil.splitters import concatenate_sets
 from braindecode.torch_ext.constraints import MaxNormDefaultConstraint
@@ -53,7 +53,7 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/final-smac-dense-fixed/',#final-eval
+        'save_folder': './data/models/pytorch/auto-diag/post-final-perf/',#final-eval
         'only_return_exp': False,
     }]
 
@@ -359,14 +359,6 @@ def padded_moving_mean(arr, axis, n_window):
     return mov_mean
 
 
-def padded_moving_demean(arr, axis, n_window):
-    assert arr.dtype != np.float16
-    assert n_window % 2 == 1
-    mov_mean = padded_moving_mean(arr, axis, n_window=n_window)
-    arr = arr - mov_mean
-    return arr
-
-
 def shrink_spikes(example, threshold, axis, n_window):
     """Example could be single example or all...
     should work for both."""
@@ -401,7 +393,8 @@ def run_exp(test_on_eval, max_recording_mins,
             batch_size, max_epochs,
             only_return_exp):
     cuda = True
-
+    import torch.backends.cudnn as cudnn
+    cudnn.benchmark = True
     preproc_functions = []
     preproc_functions.append(
         lambda data, fs: (data[:, int(sec_to_cut * fs):-int(
@@ -603,7 +596,7 @@ def run_exp(test_on_eval, max_recording_mins,
     else:
         assert False, "unknown model name {:s}".format(model_name)
     if not model_name == '3path':
-        to_dense_prediction_model_fixed(model)
+        to_dense_prediction_model(model)
     log.info("Model:\n{:s}".format(str(model)))
     if cuda:
         model.cuda()
@@ -637,7 +630,7 @@ def run_exp(test_on_eval, max_recording_mins,
             optimizer, batch_period=max_epochs * n_batches, base_lr=init_lr))
 
     loss_function = lambda preds, targets: F.nll_loss(
-        th.mean(preds, dim=2)[:,:,0], targets)
+        th.mean(preds, dim=2, keepdim=False), targets)
 
     if model_constraint is not None:
         assert model_constraint == 'defaultnorm'

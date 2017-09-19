@@ -1,4 +1,4 @@
-algo = python3.5 /home/schirrmr/code/hyperoptim/scripts/smac/run.py
+algo = python /home/schirrmr/code/hyperoptim/scripts/smac/run.py
 paramfile = deep4.pcs
 run_obj = quality
 runcount_limit = 1500

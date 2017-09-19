@@ -4,7 +4,6 @@ os.sys.path.insert(0, '/home/schirrmr/braindecode/code/')
 os.sys.path.insert(0, '/home/schirrmr/braindecode/code/braindecode/')
 os.sys.path.insert(0, '/home/schirrmr/code/auto-diagnosis/')
 import logging
-import time
 
 import numpy as np
 import resampy
@@ -12,8 +11,6 @@ from torch import optim
 import torch.nn.functional as F
 import torch as th
 
-from braindecode.datautil.signalproc import (exponential_running_standardize,
-    exponential_running_demean)
 from braindecode.datautil.signal_target import SignalAndTarget
 from braindecode.torch_ext.util import np_to_var
 from braindecode.torch_ext.util import set_random_seeds
@@ -23,19 +20,11 @@ from braindecode.experiments.monitors import (RuntimeMonitor, LossMonitor,
                                               CroppedTrialMisclassMonitor,
                                               MisclassMonitor)
 from braindecode.experiments.stopcriteria import MaxEpochs
-from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
-from braindecode.models.deep4 import Deep4Net
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.datautil.iterators import get_balanced_batches
-from braindecode.datautil.signalproc import bandpass_cnt
 from braindecode.torch_ext.constraints import MaxNormDefaultConstraint
 
-from autodiag.dataset import load_data, DiagnosisSet
-from autodiag.clean import set_jumps_to_zero
-from autodiag.batch_modifier import RemoveMinMaxDiff
-from autodiag.iterator import ModifiedIterator
-from autodiag.modelutil import to_linear_plus_minus_net
-from autodiag.losses import binary_cross_entropy_with_logits
+from autodiag.dataset import  DiagnosisSet
 
 log = logging.getLogger(__name__)
 
@@ -112,60 +101,6 @@ def padded_moving_mean(arr, axis, n_window):
     return mov_mean
 
 
-def padded_moving_demean(arr, axis, n_window):
-    assert arr.dtype != np.float16
-    assert n_window % 2 == 1
-    mov_mean = padded_moving_mean(arr, axis, n_window=n_window)
-    arr = arr - mov_mean
-    return arr
-
-
-def padded_moving_divide_square(arr, axis, n_window, eps=0.1):
-    """Pads by replicating n_window first and last elements
-    and putting them at end and start (no reflection)"""
-    assert arr.dtype != np.float16
-    assert n_window % 2 == 1
-    mov_mean_sqr = padded_moving_mean(np.square(arr), axis=axis, n_window=n_window)
-    arr = arr / np.maximum(np.sqrt(mov_mean_sqr), eps)
-    return arr
-
-
-def padded_moving_standardize(arr, axis, n_window, eps=0.1):
-    assert arr.dtype != np.float16
-    assert n_window % 2 == 1
-    arr = padded_moving_demean(arr, axis=axis, n_window=n_window)
-    arr = padded_moving_divide_square(arr, axis=axis, n_window=n_window, eps=eps)
-    return arr
-
-
-def demean(x, axis):
-    return x - np.mean(x, axis=axis, keepdims=True)
-
-def standardize(x, axis):
-    return (x - np.mean(x, axis=axis, keepdims=True)) / np.maximum(
-        1e-4, np.std(x, axis=axis, keepdims=True))
-
-
-def clean_jumps(x, window_len, threshold, expected, cuda):
-    x_var = np_to_var([x])
-    if cuda:
-        x_var = x_var.cuda()
-
-    maxs = F.max_pool1d(x_var,window_len, stride=1)
-    mins = F.max_pool1d(-x_var,window_len, stride=1)
-
-    diffs = maxs + mins
-    large_diffs = (diffs > threshold).type_as(diffs) * diffs
-    padded = F.pad(large_diffs.unsqueeze(0), (window_len-1,window_len-1, 0,0), 'constant', 0)
-    max_diffs = th.max(padded[:,:,:,window_len-1:], padded[:,:,:,:-window_len+1]).unsqueeze(0)
-    max_diffs = th.clamp(max_diffs, min=expected)
-    x_var = x_var * (expected / max_diffs)
-
-    x = x_var.data.cpu().numpy()[0]
-    return x
-
-
-
 def shrink_spikes(example, threshold, axis, n_window):
     """Example could be single example or all...
     should work for both."""
@@ -182,13 +117,8 @@ def shrink_spikes(example, threshold, axis, n_window):
 
 def run_exp(max_recording_mins, n_recordings,
             sec_to_cut, duration_recording_mins, max_abs_val,
-            max_min_threshold, max_min_expected, shrink_val,
-            max_min_remove, batch_set_zero_val, batch_set_zero_test,
+            shrink_val,
             sampling_freq,
-            low_cut_hz, high_cut_hz,
-            exp_demean, exp_standardize,
-            moving_demean, moving_standardize,
-            channel_demean, channel_standardize,
             divisor,
             n_folds, i_test_fold,
             model,
@@ -207,20 +137,6 @@ def run_exp(max_recording_mins, n_recordings,
     if max_abs_val is not None:
         preproc_functions.append(lambda data, fs:
                                  (np.clip(data, -max_abs_val, max_abs_val), fs))
-    if max_min_threshold is not None:
-        preproc_functions.append(lambda data, fs:
-                                 (clean_jumps(
-                                     data, 200, max_min_threshold,
-                                     max_min_expected, cuda), fs))
-    if max_min_remove is not None:
-        window_len = 200
-        preproc_functions.append(lambda data, fs:
-                                 (set_jumps_to_zero(
-                                     data, window_len=window_len,
-                                     threshold=max_min_remove,
-                                     cuda=cuda,
-                                     clip_min_max_to_zero=True), fs))
-
     if shrink_val is not None:
         preproc_functions.append(lambda data, fs:
                                  (shrink_spikes(
@@ -231,28 +147,6 @@ def run_exp(max_recording_mins, n_recordings,
                                                                 axis=1,
                                                                 filter='kaiser_fast'),
                                                sampling_freq))
-    preproc_functions.append(lambda data, fs:
-                             (bandpass_cnt(data, low_cut_hz, high_cut_hz,
-                                           fs,
-                                           filt_order=4, axis=1),
-                              fs))
-
-    if exp_demean:
-        preproc_functions.append(lambda data, fs: (exponential_running_demean(
-            data.T, factor_new=0.001, init_block_size=100).T, fs))
-    if exp_standardize:
-        preproc_functions.append(lambda data, fs: (exponential_running_standardize(
-            data.T, factor_new=0.001, init_block_size=100).T, fs))
-    if moving_demean:
-        preproc_functions.append(lambda data, fs: (padded_moving_demean(
-            data, axis=1, n_window=201), fs))
-    if moving_standardize:
-        preproc_functions.append(lambda data, fs: (padded_moving_standardize(
-            data, axis=1, n_window=201), fs))
-    if channel_demean:
-        preproc_functions.append(lambda data, fs: (demean(data, axis=1), fs))
-    if channel_standardize:
-        preproc_functions.append(lambda data, fs: (standardize(data, axis=1), fs))
     if divisor is not None:
         preproc_functions.append(lambda data, fs: (data / divisor, fs))
 
@@ -290,21 +184,16 @@ def run_exp(max_recording_mins, n_recordings,
                                        input_time_length=input_time_length,
                                       n_preds_per_input=n_preds_per_input)
     loss_function = lambda preds, targets: F.nll_loss(
-        th.mean(preds, dim=2)[:,:,0], targets)
+        th.mean(preds, dim=2, keepdim=False), targets)
 
     if model_constraint is not None:
+        assert model_constraint == 'defaultnorm'
         model_constraint = MaxNormDefaultConstraint()
     monitors = [LossMonitor(), MisclassMonitor(col_suffix='sample_misclass'),
                 CroppedTrialMisclassMonitor(input_time_length),
                 RuntimeMonitor(),]
     stop_criterion = MaxEpochs(max_epochs)
     batch_modifier = None
-    if batch_set_zero_val is not None:
-        batch_modifier = RemoveMinMaxDiff(batch_set_zero_val, clip_max_abs=True,
-                                          set_zero=True)
-    if (batch_set_zero_val is not None) and (batch_set_zero_test == True):
-        iterator = ModifiedIterator(iterator, batch_modifier,)
-        batch_modifier = None
     exp = Experiment(model, train_set, valid_set, test_set, iterator,
                      loss_function, optimizer, model_constraint,
                      monitors, stop_criterion,

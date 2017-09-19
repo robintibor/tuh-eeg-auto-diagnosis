@@ -131,4 +131,3 @@ def compute_counts_and_relative_frequencies(file_names, labels,
         incorrect_imprs=incorrect_imprs,
     )
     return result
-
