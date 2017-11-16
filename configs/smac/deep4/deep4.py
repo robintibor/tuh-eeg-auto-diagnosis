@@ -179,7 +179,9 @@ def run_exp(
         split_first_layer,
         do_batch_norm,
         stride_before_pool,
-        only_return_exp):
+        only_return_exp,
+        time_cut_off_sec,
+        start_time):
     kwargs = locals()
     for model_param in [
         'final_conv_length',
@@ -326,6 +328,8 @@ def run(ex, max_recording_mins, n_recordings,
         split_first_layer,
         do_batch_norm,
         stride_before_pool,
+        time_cut_off_sec,
+        start_time,
         only_return_exp):
     i_test_fold = int(i_test_fold)
     kwargs = locals()
@@ -333,7 +337,6 @@ def run(ex, max_recording_mins, n_recordings,
     import sys
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                      level=logging.DEBUG, stream=sys.stdout)
-    start_time = time.time()
     ex.info['finished'] = False
 
 

@@ -153,13 +153,8 @@ def sample_config_params(rng, params):
 def run_exp(
         max_recording_mins, n_recordings,
         sec_to_cut, duration_recording_mins, max_abs_val,
-        max_min_threshold, max_min_expected, shrink_val,
-        max_min_remove, batch_set_zero_val, batch_set_zero_test,
+        shrink_val,
         sampling_freq,
-        low_cut_hz, high_cut_hz,
-        exp_demean, exp_standardize,
-        moving_demean, moving_standardize,
-        channel_demean, channel_standardize,
         divisor,
         n_folds, i_test_fold,
         final_conv_length,
@@ -176,6 +171,8 @@ def run_exp(
         split_first_layer,
         do_batch_norm,
         drop_prob,
+        time_cut_off_sec,
+        start_time,
         only_return_exp):
     kwargs = locals()
     for model_param in [
@@ -270,13 +267,8 @@ def run_exp(
 
 def run(ex, max_recording_mins, n_recordings,
         sec_to_cut, duration_recording_mins, max_abs_val,
-        max_min_threshold, max_min_expected, shrink_val,
-        max_min_remove, batch_set_zero_val, batch_set_zero_test,
+        shrink_val,
         sampling_freq,
-        low_cut_hz, high_cut_hz,
-        exp_demean, exp_standardize,
-        moving_demean, moving_standardize,
-        channel_demean, channel_standardize,
         divisor,
         n_folds, i_test_fold,
         model_constraint,
@@ -293,6 +285,8 @@ def run(ex, max_recording_mins, n_recordings,
         split_first_layer,
         do_batch_norm,
         drop_prob,
+        time_cut_off_sec,
+        start_time,
         only_return_exp):
     i_test_fold = int(i_test_fold)
     kwargs = locals()
@@ -300,7 +294,6 @@ def run(ex, max_recording_mins, n_recordings,
     import sys
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                      level=logging.DEBUG, stream=sys.stdout)
-    start_time = time.time()
     ex.info['finished'] = False
 
 

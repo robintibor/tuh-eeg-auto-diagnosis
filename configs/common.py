@@ -4,6 +4,7 @@ os.sys.path.insert(0, '/home/schirrmr/braindecode/code/')
 os.sys.path.insert(0, '/home/schirrmr/braindecode/code/braindecode/')
 os.sys.path.insert(0, '/home/schirrmr/code/auto-diagnosis/')
 import logging
+import time
 
 import numpy as np
 import resampy
@@ -23,6 +24,8 @@ from braindecode.experiments.stopcriteria import MaxEpochs
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.datautil.iterators import get_balanced_batches
 from braindecode.torch_ext.constraints import MaxNormDefaultConstraint
+from braindecode.datautil.splitters import concatenate_sets
+
 
 from autodiag.dataset import  DiagnosisSet
 
@@ -125,8 +128,12 @@ def run_exp(max_recording_mins, n_recordings,
             input_time_length,
             model_constraint,
             batch_size, max_epochs,
-            only_return_exp):
+            only_return_exp,
+            time_cut_off_sec,
+            start_time):
     cuda = True
+    import torch.backends.cudnn as cudnn
+    cudnn.benchmark = True
 
     preproc_functions = []
     preproc_functions.append(
@@ -201,7 +208,44 @@ def run_exp(max_recording_mins, n_recordings,
                      run_after_early_stop=True, batch_modifier=batch_modifier,
                      cuda=cuda)
     if not only_return_exp:
-        exp.run()
+        # Until first stop
+        exp.setup_training()
+        exp.monitor_epoch(exp.datasets)
+        exp.print_epoch()
+        exp.rememberer.remember_epoch(exp.epochs_df, exp.model,
+                                      exp.optimizer)
+
+        exp.iterator.reset_rng()
+        while not exp.stop_criterion.should_stop(exp.epochs_df):
+            if (time.time() - start_time) > time_cut_off_sec:
+                log.info("Ran out of time after {:.2f} sec.".format(
+                    time.time() - start_time))
+                return exp
+            log.info("Still in time after {:.2f} sec.".format(
+                    time.time() - start_time))
+            exp.run_one_epoch(exp.datasets, remember_best=True)
+        if (time.time() - start_time) > time_cut_off_sec:
+            log.info("Ran out of time after {:.2f} sec.".format(
+                time.time() - start_time))
+            return exp
+        exp.setup_after_stop_training()
+        # Run until second stop
+        datasets = exp.datasets
+        datasets['train'] = concatenate_sets([datasets['train'],
+                                             datasets['valid']])
+        exp.monitor_epoch(datasets)
+        exp.print_epoch()
+
+        exp.iterator.reset_rng()
+        while not exp.stop_criterion.should_stop(exp.epochs_df):
+            if (time.time() - start_time) > time_cut_off_sec:
+                log.info("Ran out of time after {:.2f} sec.".format(
+                    time.time() - start_time))
+                return exp
+            log.info("Still in time after {:.2f} sec.".format(
+                    time.time() - start_time))
+            exp.run_one_epoch(datasets, remember_best=False)
+
     else:
         exp.dataset = dataset
         exp.splitter = splitter

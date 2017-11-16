@@ -110,7 +110,7 @@ def create_multi_start_path_net(in_chans,
     if drop_prob > 0:
          model.add_module('classifier_drop', nn.Dropout(p=drop_prob))
     if mean_across_features:
-        model.add_module('feature_mean', Expression(lambda x: th.mean(x, dim=2)))
+        model.add_module('feature_mean', Expression(lambda x: th.mean(x, dim=2, keepdim=True)))
     n_features_now = n_classifier_filters
     if n_features_now is None:
         n_features_now = 64

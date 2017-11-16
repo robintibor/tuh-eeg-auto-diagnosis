@@ -8,6 +8,6 @@ instance_file = instances.txt
 output_dir = /home/schirrmr/data/models/pytorch/auto-diag/smac-deep4/deterministic
 shared_model = 1
 input_psmac_dirs = /home/schirrmr/data/models/pytorch/auto-diag/smac-deep4/deterministic*
-cutoff_time = 12600
+cutoff_time = 14400
 abort_on_first_run_crash = 0
 

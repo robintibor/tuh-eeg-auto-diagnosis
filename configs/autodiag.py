@@ -53,7 +53,7 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/post-final-perf/',#final-eval
+        'save_folder': './data/models/pytorch/auto-diag/ekg/',#final-eval
         'only_return_exp': False,
     }]
 
@@ -72,19 +72,29 @@ def get_grid_param_list():
          'shrink_val': None},
     ]
 
+    sensor_params = [{
+        'n_chans': 21,
+        'sensor_types': ['EEG'],
+    },
+    {
+        'n_chans': 22,
+        'sensor_types': ['EEG', 'EKG'],
+    }]
+
+
     preproc_params = dictlistprod({
         'sec_to_cut': [60],
-        'duration_recording_mins': [20],
-        'test_recording_mins': [None],
+        'duration_recording_mins': [1],
+        'test_recording_mins': [1],
         'sampling_freq': [100],
         'divisor': [10],
     })
 
     # this differentiates train/test also.
     split_params = dictlistprod({
-        'test_on_eval': [True],
-        'n_folds': [5],
-        'i_test_fold': [4],
+        'test_on_eval': [False],
+        'n_folds': [10],
+        'i_test_fold': list(range(10)),
         'shuffle': [True],
     })
 
@@ -198,13 +208,14 @@ def get_grid_param_list():
     #     'model_constraint': None,
     #     'save_folder': './data/models/pytorch/auto-diag/final-smac/',#final-eval
     # },
-    # {
-    #     'input_time_length': 6000,
-    #     'final_conv_length': None,
-    #     'model_name': '3path',
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    # },
+    {
+        'input_time_length': 6000,
+        'final_conv_length': None,
+        'model_name': '3path',
+        'n_start_chans': None,
+        'n_chan_factor': None,
+        'model_constraint': 'defaultnorm',
+    },
     # {
     #     'input_time_length': 1200,
     #     'final_conv_length': None,
@@ -247,6 +258,7 @@ def get_grid_param_list():
         load_params,
         clean_params,
         preproc_params,
+        sensor_params,
         split_params,
         model_params,
         optim_params,
@@ -373,7 +385,10 @@ def shrink_spikes(example, threshold, axis, n_window):
     return cleaned_example
 
 
-def run_exp(test_on_eval, max_recording_mins,
+def run_exp(test_on_eval,
+            sensor_types,
+            n_chans,
+            max_recording_mins,
             test_recording_mins,
             n_recordings,
             sec_to_cut, duration_recording_mins, max_abs_val,
@@ -421,7 +436,8 @@ def run_exp(test_on_eval, max_recording_mins,
     dataset = DiagnosisSet(n_recordings=n_recordings,
                            max_recording_mins=max_recording_mins,
                            preproc_functions=preproc_functions,
-                           train_or_eval='train')
+                           train_or_eval='train',
+                           sensor_types=sensor_types)
     if test_on_eval:
         if test_recording_mins is None:
             test_recording_mins = duration_recording_mins
@@ -431,7 +447,8 @@ def run_exp(test_on_eval, max_recording_mins,
         test_dataset = DiagnosisSet(n_recordings=n_recordings,
                                 max_recording_mins=None,
                                 preproc_functions=test_preproc_functions,
-                                train_or_eval='eval')
+                                train_or_eval='eval',
+                                sensor_types=sensor_types)
     if not only_return_exp:
         X,y = dataset.load()
         max_shape = np.max([list(x.shape) for x in X],
@@ -475,22 +492,22 @@ def run_exp(test_on_eval, max_recording_mins,
 
     set_random_seeds(seed=20170629, cuda=cuda)
     n_classes = 2
-    in_chans = 21
     if model_name == 'shallow':
-        model = ShallowFBCSPNet(in_chans=in_chans, n_classes=n_classes,
+        model = ShallowFBCSPNet(in_chans=n_chans, n_classes=n_classes,
                                 n_filters_time=n_start_chans,
                                 n_filters_spat=n_start_chans,
                                 input_time_length=input_time_length,
                                 final_conv_length=final_conv_length).create_network()
     elif model_name == 'deep':
-        model = Deep4Net(in_chans, n_classes,
+        model = Deep4Net(n_chans, n_classes,
                          n_filters_time=n_start_chans,
                          n_filters_spat=n_start_chans,
                          input_time_length=input_time_length,
                          n_filters_2 = int(n_start_chans * n_chan_factor),
                          n_filters_3 = int(n_start_chans * (n_chan_factor ** 2.0)),
                          n_filters_4 = int(n_start_chans * (n_chan_factor ** 3.0)),
-                         final_conv_length=final_conv_length).create_network()
+                         final_conv_length=final_conv_length,
+                        stride_before_pool=True).create_network()
     elif (model_name == 'deep_smac') or (model_name == 'deep_smac_bnorm'):
         if model_name == 'deep_smac':
             do_batch_norm = False
@@ -517,7 +534,7 @@ def run_exp(test_on_eval, max_recording_mins,
         split_first_layer = True
         n_chan_factor = n_filters_factor
         n_start_chans = n_filters_start
-        model = Deep4Net(in_chans, n_classes,
+        model = Deep4Net(n_chans, n_classes,
                  n_filters_time=n_start_chans,
                  n_filters_spat=n_start_chans,
                  input_time_length=input_time_length,
@@ -540,7 +557,8 @@ def run_exp(test_on_eval, max_recording_mins,
                  later_pool_nonlin=later_pool_nonlin,
                  pool_time_length=pool_time_length,
                  pool_time_stride=pool_time_stride,
-                 split_first_layer=split_first_layer).create_network()
+                 split_first_layer=split_first_layer,
+                 stride_before_pool=True).create_network()
     elif model_name == 'shallow_smac':
         conv_nonlin = identity
         do_batch_norm = True
@@ -554,7 +572,7 @@ def run_exp(test_on_eval, max_recording_mins,
         pool_time_length = 84
         pool_time_stride = 3
         split_first_layer = True
-        model = ShallowFBCSPNet(in_chans=in_chans, n_classes=n_classes,
+        model = ShallowFBCSPNet(in_chans=n_chans, n_classes=n_classes,
                                 n_filters_time=n_filters_time,
                                 n_filters_spat=n_filters_spat,
                                 input_time_length=input_time_length,
@@ -572,7 +590,7 @@ def run_exp(test_on_eval, max_recording_mins,
     elif model_name == 'linear':
         model = nn.Sequential()
         model.add_module("conv_classifier",
-                         nn.Conv2d(in_chans, n_classes, (600,1)))
+                         nn.Conv2d(n_chans, n_classes, (600,1)))
         model.add_module('softmax', nn.LogSoftmax())
         model.add_module('squeeze', Expression(lambda x: x.squeeze(3)))
     elif model_name == '3path':
@@ -586,7 +604,7 @@ def run_exp(test_on_eval, max_recording_mins,
         extra_conv_stride = 4
         # dont forget to reset n_preds_per_blabla
         model = create_multi_start_path_net(
-            in_chans=in_chans,
+            in_chans=n_chans,
             virtual_chan_1x1_conv=virtual_chan_1x1_conv,
             n_start_filters=n_start_filters, early_bnorm=early_bnorm,
             later_kernel_len=later_kernel_len,
@@ -602,7 +620,7 @@ def run_exp(test_on_eval, max_recording_mins,
         model.cuda()
     # determine output size
     test_input = np_to_var(
-        np.ones((2, in_chans, input_time_length, 1), dtype=np.float32))
+        np.ones((2, n_chans, input_time_length, 1), dtype=np.float32))
     if cuda:
         test_input = test_input.cuda()
     log.info("In shape: {:s}".format(str(test_input.cpu().data.numpy().shape)))
@@ -680,6 +698,8 @@ def save_torch_artifact(ex, obj, filename):
 
 def run(ex,
         test_on_eval,
+        sensor_types,
+        n_chans,
         max_recording_mins, n_recordings,
         sec_to_cut, duration_recording_mins,
         test_recording_mins,
