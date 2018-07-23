@@ -12,6 +12,7 @@ import resampy
 from torch import optim
 import torch.nn.functional as F
 import torch as th
+from tensorboardX import SummaryWriter
 
 from braindecode.datautil.signal_target import SignalAndTarget
 from braindecode.torch_ext.util import np_to_var
@@ -22,9 +23,11 @@ from braindecode.experiments.monitors import (RuntimeMonitor, LossMonitor,
                                               CroppedTrialMisclassMonitor,
                                               MisclassMonitor)
 from autodiag.monitors import CroppedDiagnosisMonitor
-from braindecode.experiments.stopcriteria import MaxEpochs
+from braindecode.experiments.stopcriteria import MaxEpochs, Or
 from braindecode.datautil.iterators import get_balanced_batches
 from braindecode.torch_ext.constraints import MaxNormDefaultConstraint
+from braindecode.torch_ext.optimizers import AdamW
+from braindecode.torch_ext.schedulers import CosineAnnealing, ScheduledOptimizer
 from braindecode.datautil.splitters import concatenate_sets
 from copy import copy
 
@@ -154,8 +157,13 @@ def run_exp(max_recording_mins, n_recordings,
             divisor,
             n_folds, i_test_fold,
             shuffle,
+            merge_train_valid,
             model,
             input_time_length,
+            optimizer,
+            learning_rate,
+            weight_decay,
+            scheduler,
             model_constraint,
             batch_size, max_epochs,
             only_return_exp,
@@ -164,6 +172,7 @@ def run_exp(max_recording_mins, n_recordings,
             test_on_eval,
             test_recording_mins,
             sensor_types,
+            log_dir,
             np_th_seed):
     sgdr=False
     cuda = True
@@ -251,7 +260,8 @@ def run_exp(max_recording_mins, n_recordings,
         test_set = None
 
     set_random_seeds(seed=np_th_seed, cuda=cuda)
-    optimizer = optim.Adam(model.parameters())
+
+    #optimizer = optim.Adam(model.parameters())
     log.info("Model:\n{:s}".format(str(model)))
     if cuda:
         model.cuda()
@@ -268,6 +278,25 @@ def run_exp(max_recording_mins, n_recordings,
     iterator = CropsFromTrialsIterator(batch_size=batch_size,
                                        input_time_length=input_time_length,
                                       n_preds_per_input=n_preds_per_input)
+    assert optimizer in ['adam', 'adamw'], ("Expect optimizer to be either "
+                                            "adam or adamw")
+    schedule_weight_decay = optimizer == 'adamw'
+    if optimizer == 'adam':
+        optim_class = optim.Adam
+    else:
+        optim_class = AdamW
+
+    optimizer = optim_class(
+        model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    if scheduler is not None:
+        assert scheduler =='cosine'
+        n_updates_per_epoch = sum(
+            [1 for _ in iterator.get_batches(train_set, shuffle=True)])
+        # Adapt if you have a different number of epochs
+        n_updates_per_period = n_updates_per_epoch * max_epochs
+        scheduler = CosineAnnealing(n_updates_per_period)
+        optimizer = ScheduledOptimizer(scheduler, optimizer,
+                                       schedule_weight_decay=schedule_weight_decay)
     loss_function = lambda preds, targets: F.nll_loss(
         th.mean(preds, dim=2, keepdim=False), targets)
 
@@ -277,7 +306,31 @@ def run_exp(max_recording_mins, n_recordings,
     monitors = [LossMonitor(), MisclassMonitor(col_suffix='sample_misclass'),
                 CroppedDiagnosisMonitor(input_time_length, n_preds_per_input),
                 RuntimeMonitor(),]
-    stop_criterion = MaxEpochs(max_epochs)
+
+    ## HACK: use stop criterion for tensorboard logging
+    class LoggingCriterion(object):
+        """
+        Fake criterion, actually for logging.
+
+        Parameters
+        ----------
+        max_epochs: int
+        """
+
+        def __init__(self, log_dir):
+            self.writer = SummaryWriter(log_dir)
+
+        def should_stop(self, epochs_df):
+            iteration = len(epochs_df)
+            last_row = dict(epochs_df.iloc[-1])
+            for key in last_row:
+                val = last_row[key]
+                self.writer.add_scalar(key, val, iteration)
+
+            # Keep in mind  epoch 0 without training is also part of dataframe
+            return False
+
+    stop_criterion = Or([MaxEpochs(max_epochs), LoggingCriterion(log_dir)])
     batch_modifier = None
     exp = Experiment(model, train_set, valid_set, test_set, iterator,
                      loss_function, optimizer, model_constraint,
@@ -294,6 +347,10 @@ def run_exp(max_recording_mins, n_recordings,
                                       exp.optimizer)
 
         exp.iterator.reset_rng()
+        if merge_train_valid:
+            datasets = exp.datasets
+            datasets['train'] = concatenate_sets([datasets['train'],
+                                                  datasets['valid']])
         while not exp.stop_criterion.should_stop(exp.epochs_df):
             if (time.time() - start_time) > time_cut_off_sec:
                 log.info("Ran out of time after {:.2f} sec.".format(
@@ -306,23 +363,24 @@ def run_exp(max_recording_mins, n_recordings,
             log.info("Ran out of time after {:.2f} sec.".format(
                 time.time() - start_time))
             return exp
-        exp.setup_after_stop_training()
-        # Run until second stop
-        datasets = exp.datasets
-        datasets['train'] = concatenate_sets([datasets['train'],
-                                             datasets['valid']])
-        exp.monitor_epoch(datasets)
-        exp.print_epoch()
+        if not merge_train_valid:
+            exp.setup_after_stop_training()
+            # Run until second stop
+            datasets = exp.datasets
+            datasets['train'] = concatenate_sets([datasets['train'],
+                                                 datasets['valid']])
+            exp.monitor_epoch(datasets)
+            exp.print_epoch()
 
-        exp.iterator.reset_rng()
-        while not exp.stop_criterion.should_stop(exp.epochs_df):
-            if (time.time() - start_time) > time_cut_off_sec:
-                log.info("Ran out of time after {:.2f} sec.".format(
-                    time.time() - start_time))
-                return exp
-            log.info("Still in time after {:.2f} sec.".format(
-                    time.time() - start_time))
-            exp.run_one_epoch(datasets, remember_best=False)
+            exp.iterator.reset_rng()
+            while not exp.stop_criterion.should_stop(exp.epochs_df):
+                if (time.time() - start_time) > time_cut_off_sec:
+                    log.info("Ran out of time after {:.2f} sec.".format(
+                        time.time() - start_time))
+                    return exp
+                log.info("Still in time after {:.2f} sec.".format(
+                        time.time() - start_time))
+                exp.run_one_epoch(datasets, remember_best=False)
 
     else:
         exp.dataset = dataset

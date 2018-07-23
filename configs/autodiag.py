@@ -78,7 +78,7 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/cosine/',
+        'save_folder': '/data/schirrmr/schirrmr/models/auto-diag/cosine/',
         'only_return_exp': False,
     }]
 
@@ -122,6 +122,7 @@ def get_grid_param_list():
         'n_folds': [5],
         'i_test_fold': [4],
         'shuffle': [True],
+        'merge_train_valid': [True],
     })
 
     model_params = [
@@ -149,12 +150,12 @@ def get_grid_param_list():
         'model_name': 'shallow',
         'n_start_chans': 40,
         'n_chan_factor': None,
-        'model_constraint': 'defaultnorm',
+        'model_constraint': None,
         'stride_before_pool': None,
         'scheduler': 'cosine',
-        #'optimizer': 'adamw',
-        #'learning_rate': 0.0625 * 0.01,
-        #'weight_decay': 0,
+        'optimizer': 'adamw',
+        'learning_rate': 0.0625 * 0.01,
+        'weight_decay': 0,
     },
     {
         'input_time_length': 6000,
@@ -162,12 +163,12 @@ def get_grid_param_list():
         'model_name': 'deep',
         'n_start_chans': 25,
         'n_chan_factor': 2,
-        'model_constraint': 'defaultnorm',
+        'model_constraint': None,
         'stride_before_pool': True,
         'scheduler': 'cosine',
-        #'optimizer': 'adamw',
-        #'learning_rate': 1*0.01,
-        #'weight_decay': 0.5*0.001,
+        'optimizer': 'adamw',
+        'learning_rate': 1*0.01,
+        'weight_decay': 0.5*0.001,
     },
     # {
     #     'input_time_length': 1200,
@@ -250,16 +251,6 @@ def get_grid_param_list():
     # },
     ]
 
-    adam_params = [
-        {
-        'optim_name': 'adam',
-        'sgdr': False,
-        'momentum': None,
-        'init_lr': 1e-3
-    },
-    ]
-
-    optim_params = adam_params
 
     iterator_params = [{
         'batch_size':  64
@@ -280,7 +271,6 @@ def get_grid_param_list():
         sensor_params,
         split_params,
         model_params,
-        optim_params,
         iterator_params,
         stop_params,
     ])
@@ -361,12 +351,18 @@ def run_exp(test_on_eval,
             divisor,
             n_folds, i_test_fold,
             shuffle,
+            merge_train_valid,
             model_name,
             n_start_chans, n_chan_factor,
             input_time_length, final_conv_length,
             stride_before_pool,
+            optimizer,
+            learning_rate,
+            weight_decay,
+            scheduler,
             model_constraint,
             batch_size, max_epochs,
+            log_dir,
             only_return_exp,
             np_th_seed):
 
@@ -586,8 +582,13 @@ def run_exp(test_on_eval,
         divisor,
         n_folds, i_test_fold,
         shuffle,
+        merge_train_valid,
         model,
         input_time_length,
+        optimizer,
+        learning_rate,
+        weight_decay,
+        scheduler,
         model_constraint,
         batch_size, max_epochs,
         only_return_exp,
@@ -596,6 +597,7 @@ def run_exp(test_on_eval,
         test_on_eval,
         test_recording_mins,
         sensor_types,
+        log_dir,
         np_th_seed,)
 
     return exp
@@ -629,16 +631,21 @@ def run(ex,
         divisor,
         n_folds, i_test_fold,
         shuffle,
+        merge_train_valid,
         model_name, input_time_length, final_conv_length,
         stride_before_pool,
         n_start_chans, n_chan_factor,
-        model_constraint,
+        optimizer,
+        learning_rate,
+        weight_decay,
         scheduler,
+        model_constraint,
         batch_size, max_epochs,
         save_predictions,
         save_crop_predictions,
         np_th_seed,
         only_return_exp):
+    log_dir =  ex.observers[0].dir
     kwargs = locals()
     kwargs.pop('ex')
     kwargs.pop('save_predictions')
