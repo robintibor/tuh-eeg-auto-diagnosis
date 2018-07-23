@@ -239,18 +239,9 @@ def run_exp(max_recording_mins, n_recordings,
     if not only_return_exp:
         if not test_on_eval:
             train_set, valid_set, test_set = splitter.split(X, y)
-            if sgdr:
-                train_set = concatenate_sets([train_set, valid_set])
-                # dummy valid set...
-                valid_set.X = valid_set.X[:3]
-                valid_set.y = valid_set.y[:3]
         else:
-            if not sgdr:
-                train_set, valid_set = splitter.split(X, y)
-            else:
-                # dummy valid set...
-                train_set = SignalAndTarget(X,y)
-                valid_set = SignalAndTarget(X[:3], y[:3])
+
+            train_set, valid_set = splitter.split(X, y)
             test_set = SignalAndTarget(test_X, test_y)
             del test_X, test_y
         del X,y # shouldn't be necessary, but just to make sure
