@@ -57,11 +57,11 @@ def load_data(fname, preproc_functions, sensor_types=['EEG']):
     return data
 
 def get_all_sorted_file_names_and_labels(train_or_eval):
-    normal_path = ('/home/gemeinl/data/normal_abnormal/normalv1.1.1/'
-        'v1.1.1/edf/{:s}/normal/'.format(train_or_eval))
+    normal_path = ('/data/schirrmr/gemeinl/tuh-abnormal-eeg/raw/v2.0.0/edf/'
+        '{:s}/normal/'.format(train_or_eval))
     normal_file_names = read_all_file_names(normal_path, '.edf', key='time')
-    abnormal_path = ('/home/gemeinl/data/normal_abnormal/abnormalv1.1.1/'
-        'v1.1.1/edf/{:s}/abnormal/'.format(train_or_eval))
+    abnormal_path = ('/data/schirrmr/gemeinl/tuh-abnormal-eeg/raw/v2.0.0/edf/'
+        '{:s}/abnormal/'.format(train_or_eval))
     abnormal_file_names = read_all_file_names(abnormal_path, '.edf', key='time')
 
     all_file_names = normal_file_names + abnormal_file_names
@@ -69,8 +69,8 @@ def get_all_sorted_file_names_and_labels(train_or_eval):
     all_file_names = sorted(all_file_names, key=time_key)
 
     abnorm_counts = [fname.count('abnormal') for fname in all_file_names]
-    assert set(abnorm_counts) == set([1, 3])
-    labels = np.array(abnorm_counts) == 3
+    assert set(abnorm_counts) == set([1, 2])
+    labels = np.array(abnorm_counts) == 2
     labels = labels.astype(np.int64)
     return all_file_names, labels
 
@@ -90,6 +90,7 @@ class DiagnosisSet(object):
 
         log.info("Read recording lengths...")
         if self.max_recording_mins is not None:
+            # See https://10.5.166.73:9999/notebooks/code/auto-diagnosis/notebooks/File_Lengths.ipynb
             lengths = np.load(
                 '/home/schirrmr/code/auto-diagnosis/sorted-recording-lengths.npy')
             mask = lengths < self.max_recording_mins * 60

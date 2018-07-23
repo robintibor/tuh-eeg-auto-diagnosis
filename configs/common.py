@@ -7,6 +7,7 @@ import logging
 import time
 
 import numpy as np
+from numpy.random import RandomState
 import resampy
 from torch import optim
 import torch.nn.functional as F
@@ -20,11 +21,12 @@ from braindecode.datautil.iterators import CropsFromTrialsIterator
 from braindecode.experiments.monitors import (RuntimeMonitor, LossMonitor,
                                               CroppedTrialMisclassMonitor,
                                               MisclassMonitor)
+from autodiag.monitors import CroppedDiagnosisMonitor
 from braindecode.experiments.stopcriteria import MaxEpochs
-from braindecode.models.util import to_dense_prediction_model
 from braindecode.datautil.iterators import get_balanced_batches
 from braindecode.torch_ext.constraints import MaxNormDefaultConstraint
 from braindecode.datautil.splitters import concatenate_sets
+from copy import copy
 
 
 from autodiag.dataset import  DiagnosisSet
@@ -46,17 +48,19 @@ def create_set(X, y, inds):
     return SignalAndTarget(new_X, new_y)
 
 
-class Splitter(object):
-    def __init__(self, n_folds, i_test_fold):
+class TrainValidTestSplitter(object):
+    def __init__(self, n_folds, i_test_fold, shuffle):
         self.n_folds = n_folds
         self.i_test_fold = i_test_fold
+        self.rng = RandomState(39483948)
+        self.shuffle = shuffle
 
-    def split(self, X, y):
+    def split(self, X, y,):
         if len(X) < self.n_folds:
             raise ValueError("Less Trials: {:d} than folds: {:d}".format(
                 len(X), self.n_folds
             ))
-        folds = get_balanced_batches(len(X), None, False,
+        folds = get_balanced_batches(len(X), self.rng, self.shuffle,
                                      n_batches=self.n_folds)
         test_inds = folds[self.i_test_fold]
         valid_inds = folds[self.i_test_fold - 1]
@@ -75,6 +79,31 @@ class Splitter(object):
 
         return train_set, valid_set, test_set
 
+
+class TrainValidSplitter(object):
+    def __init__(self, n_folds, i_valid_fold, shuffle):
+        self.n_folds = n_folds
+        self.i_valid_fold = i_valid_fold
+        self.rng = RandomState(39483948)
+        self.shuffle = shuffle
+
+    def split(self, X, y):
+        if len(X) < self.n_folds:
+            raise ValueError("Less Trials: {:d} than folds: {:d}".format(
+                len(X), self.n_folds
+            ))
+        folds = get_balanced_batches(len(X), self.rng, self.shuffle,
+                                     n_batches=self.n_folds)
+        valid_inds = folds[self.i_valid_fold]
+        all_inds = list(range(len(X)))
+        train_inds = np.setdiff1d(all_inds, valid_inds)
+        assert np.intersect1d(train_inds, valid_inds).size == 0
+        assert np.array_equal(np.sort(np.union1d(train_inds, valid_inds)),
+            all_inds)
+
+        train_set = create_set(X, y, train_inds)
+        valid_set = create_set(X, y, valid_inds)
+        return train_set, valid_set
 
 def running_mean(arr, window_len, axis=0):
     # adapted from http://stackoverflow.com/a/27681394/1469195
@@ -124,13 +153,19 @@ def run_exp(max_recording_mins, n_recordings,
             sampling_freq,
             divisor,
             n_folds, i_test_fold,
+            shuffle,
             model,
             input_time_length,
             model_constraint,
             batch_size, max_epochs,
             only_return_exp,
             time_cut_off_sec,
-            start_time):
+            start_time,
+            test_on_eval,
+            test_recording_mins,
+            sensor_types,
+            np_th_seed):
+    sgdr=False
     cuda = True
     import torch.backends.cudnn as cudnn
     cudnn.benchmark = True
@@ -159,25 +194,68 @@ def run_exp(max_recording_mins, n_recordings,
 
     dataset = DiagnosisSet(n_recordings=n_recordings,
                         max_recording_mins=max_recording_mins,
-                        preproc_functions=preproc_functions)
+                        preproc_functions=preproc_functions,
+                           train_or_eval='train',
+                           sensor_types=sensor_types)
+
+    if test_on_eval:
+        if test_recording_mins is None:
+            test_recording_mins = duration_recording_mins
+        test_preproc_functions = copy(preproc_functions)
+        test_preproc_functions[1] = lambda data, fs: (
+            data[:, :int(test_recording_mins * 60 * fs)], fs)
+        test_dataset = DiagnosisSet(n_recordings=n_recordings,
+                                max_recording_mins=None,
+                                preproc_functions=test_preproc_functions,
+                                train_or_eval='eval',
+                                sensor_types=sensor_types)
     if not only_return_exp:
         X,y = dataset.load()
-
-    splitter = Splitter(n_folds, i_test_fold,)
+        max_shape = np.max([list(x.shape) for x in X],
+                           axis=0)
+        assert max_shape[1] == int(duration_recording_mins *
+                                   sampling_freq * 60)
+        if test_on_eval:
+            test_X, test_y = test_dataset.load()
+            max_shape = np.max([list(x.shape) for x in test_X],
+                               axis=0)
+            assert max_shape[1] == int(test_recording_mins *
+                                       sampling_freq * 60)
+    if not test_on_eval:
+        splitter = TrainValidTestSplitter(n_folds, i_test_fold,
+                                          shuffle=shuffle)
+    else:
+        splitter = TrainValidSplitter(n_folds, i_valid_fold=i_test_fold,
+                                          shuffle=shuffle)
     if not only_return_exp:
-        train_set, valid_set, test_set = splitter.split(X,y)
+        if not test_on_eval:
+            train_set, valid_set, test_set = splitter.split(X, y)
+            if sgdr:
+                train_set = concatenate_sets([train_set, valid_set])
+                # dummy valid set...
+                valid_set.X = valid_set.X[:3]
+                valid_set.y = valid_set.y[:3]
+        else:
+            if not sgdr:
+                train_set, valid_set = splitter.split(X, y)
+            else:
+                # dummy valid set...
+                train_set = SignalAndTarget(X,y)
+                valid_set = SignalAndTarget(X[:3], y[:3])
+            test_set = SignalAndTarget(test_X, test_y)
+            del test_X, test_y
         del X,y # shouldn't be necessary, but just to make sure
     else:
         train_set = None
         valid_set = None
         test_set = None
 
-    set_random_seeds(seed=20170629, cuda=cuda)
+    set_random_seeds(seed=np_th_seed, cuda=cuda)
     optimizer = optim.Adam(model.parameters())
-    to_dense_prediction_model(model)
     log.info("Model:\n{:s}".format(str(model)))
     if cuda:
         model.cuda()
+    model.eval()
     in_chans = 21
     # determine output size
     test_input = np_to_var(
@@ -197,7 +275,7 @@ def run_exp(max_recording_mins, n_recordings,
         assert model_constraint == 'defaultnorm'
         model_constraint = MaxNormDefaultConstraint()
     monitors = [LossMonitor(), MisclassMonitor(col_suffix='sample_misclass'),
-                CroppedTrialMisclassMonitor(input_time_length),
+                CroppedDiagnosisMonitor(input_time_length, n_preds_per_input),
                 RuntimeMonitor(),]
     stop_criterion = MaxEpochs(max_epochs)
     batch_modifier = None
@@ -249,6 +327,8 @@ def run_exp(max_recording_mins, n_recordings,
     else:
         exp.dataset = dataset
         exp.splitter = splitter
+    if test_on_eval:
+        exp.test_dataset = test_dataset
 
     return exp
 

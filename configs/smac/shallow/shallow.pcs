@@ -31,3 +31,4 @@ final_conv_length           [1,300] [35]i
 split_first_layer           {true, false} [true]
 do_batch_norm               {true, false} [true]
 drop_prob                   [0.0,0.9] [0.5]
+input_time_length           [6000,10000] [6000]i

@@ -173,6 +173,7 @@ def run_exp(
         drop_prob,
         time_cut_off_sec,
         start_time,
+        input_time_length,
         only_return_exp):
     kwargs = locals()
     for model_param in [
@@ -199,8 +200,7 @@ def run_exp(
         'identity': identity,
         'log': safe_log,
     }
-    input_time_length = 12000
-
+    assert input_time_length == 6000
     # copy over from early seizure
     # make proper
     n_classes = 2
@@ -227,6 +227,7 @@ def run_exp(
     to_dense_prediction_model(model)
     if cuda:
         model.cuda()
+    model.eval()
     test_input = np_to_var(
         np.ones((2, in_chans, input_time_length, 1), dtype=np.float32))
     if cuda:
@@ -237,13 +238,13 @@ def run_exp(
     except RuntimeError:
         raise ValueError("Model receptive field too large...")
     n_preds_per_input = out.cpu().data.numpy().shape[2]
-    n_receptive_field= input_time_length - n_preds_per_input
+    n_receptive_field = input_time_length - n_preds_per_input
+
     if n_receptive_field > 6000:
         raise ValueError("Model receptive field ({:d}) too large...".format(
             n_receptive_field
         ))
-    else:
-        input_time_length = 2 * n_receptive_field
+        # For future, here optionally add input time length instead
 
     model = ShallowFBCSPNet(
         in_chans=in_chans, n_classes=n_classes,
@@ -261,8 +262,7 @@ def run_exp(
         batch_norm=do_batch_norm,
         batch_norm_alpha=0.1,
         drop_prob=drop_prob).create_network()
-    return common.run_exp(model=model, input_time_length=input_time_length,
-                          **kwargs)
+    return common.run_exp(model=model, **kwargs)
 
 
 def run(ex, max_recording_mins, n_recordings,
@@ -285,6 +285,7 @@ def run(ex, max_recording_mins, n_recordings,
         split_first_layer,
         do_batch_norm,
         drop_prob,
+        input_time_length,
         time_cut_off_sec,
         start_time,
         only_return_exp):

@@ -140,6 +140,9 @@ def _amplitude_phase_to_complex(amplitude, phase):
 
 
 def combine_covs(cov_1, n_1, mean_1_a, mean_1_b, cov_2, n_2, mean_2_a, mean_2_b):
+    # Maybe based on this: https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Covariance
+    # Not sure.
+    # Also maybe look at https://stats.stackexchange.com/questions/51622/combining-two-covariance-matrices
     mean_diff_product = np.dot(np.expand_dims((mean_1_a - mean_2_a), axis=-1), (mean_1_b - mean_2_b)[None])
     return ((n_1-1)*cov_1 + (n_2-1)*cov_2 + mean_diff_product *
             ((n_1*n_2)/float(n_1+n_2))) / float(n_1+n_2-1)

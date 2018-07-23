@@ -179,6 +179,7 @@ def run_exp(
         split_first_layer,
         do_batch_norm,
         stride_before_pool,
+        input_time_length,
         only_return_exp,
         time_cut_off_sec,
         start_time):
@@ -215,7 +216,7 @@ def run_exp(
         'identity': identity,
         'log': safe_log,
     }
-    input_time_length = 12000
+    assert input_time_length == 6000
 
     n_classes = 2
     in_chans = 21
@@ -266,8 +267,7 @@ def run_exp(
         raise ValueError("Model receptive field ({:d}) too large...".format(
             n_receptive_field
         ))
-    else:
-        input_time_length = 2 * n_receptive_field
+        # For future, here optionally add input time length instead
 
     model = Deep4Net(
         in_chans=in_chans, n_classes=n_classes,
@@ -296,8 +296,7 @@ def run_exp(
         batch_norm=do_batch_norm,
         batch_norm_alpha=0.1,
         stride_before_pool=stride_before_pool).create_network()
-    return common.run_exp(model=model, input_time_length=input_time_length,
-                          **kwargs)
+    return common.run_exp(model=model, **kwargs)
 
 
 def run(ex, max_recording_mins, n_recordings,
@@ -328,6 +327,7 @@ def run(ex, max_recording_mins, n_recordings,
         split_first_layer,
         do_batch_norm,
         stride_before_pool,
+        input_time_length,
         time_cut_off_sec,
         start_time,
         only_return_exp):

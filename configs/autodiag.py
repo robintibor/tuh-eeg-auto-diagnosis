@@ -34,7 +34,7 @@ from braindecode.models.util import to_dense_prediction_model
 from braindecode.datautil.iterators import get_balanced_batches
 from braindecode.datautil.splitters import concatenate_sets
 from braindecode.torch_ext.constraints import MaxNormDefaultConstraint
-from braindecode.torch_ext.util import var_to_np
+from braindecode.torch_ext.util import var_to_np, confirm_gpu_availability
 from braindecode.torch_ext.functions import identity
 
 from autodiag.dataset import DiagnosisSet
@@ -42,6 +42,31 @@ from autodiag.sgdr import CosineWithWarmRestarts, ScheduledOptimizer
 from autodiag.monitors import compute_preds_per_trial
 from autodiag.threepathnet import create_multi_start_path_net
 from autodiag.monitors import CroppedDiagnosisMonitor
+
+import importlib
+from contextlib import contextmanager
+
+@contextmanager
+def add_to_path(p):
+    import sys
+    old_path = sys.path
+    sys.path = sys.path[:]
+    sys.path.insert(0, p)
+    try:
+        yield
+    finally:
+        sys.path = old_path
+
+def path_import(absolute_path):
+   '''implementation taken from https://docs.python.org/3/library/importlib.html#importing-a-source-file-directly'''
+   with add_to_path(os.path.dirname(absolute_path)):
+       spec = importlib.util.spec_from_file_location(absolute_path, absolute_path)
+       module = importlib.util.module_from_spec(spec)
+       spec.loader.exec_module(module)
+       return module
+
+common = path_import('/home/schirrmr/code/auto-diagnosis/configs/common.py')
+
 
 log = logging.getLogger(__name__)
 log.setLevel('DEBUG')
@@ -53,39 +78,40 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': './data/models/pytorch/auto-diag/ekg/',#final-eval
+        'save_folder': './data/models/pytorch/auto-diag/cosine/',
         'only_return_exp': False,
     }]
 
+    seed_params = dictlistprod({
+        'np_th_seed': [0,1,2,3,4]
+    })
+
     save_params = [{
-        'save_predictions': True,
+        'save_predictions': False,
         'save_crop_predictions': False,
     }]
 
     load_params = [{
         'max_recording_mins': 35,
-        'n_recordings': 3000,
+        'n_recordings': 5,#3000,
     }]
 
-    clean_params = [
-        {'max_abs_val': 800,
-         'shrink_val': None},
-    ]
+    clean_params = [{
+        'max_abs_val': 800,
+        'shrink_val': None
+    }]
 
     sensor_params = [{
         'n_chans': 21,
         'sensor_types': ['EEG'],
     },
-    {
-        'n_chans': 22,
-        'sensor_types': ['EEG', 'EKG'],
-    }]
+    ]
 
 
     preproc_params = dictlistprod({
         'sec_to_cut': [60],
-        'duration_recording_mins': [1],
-        'test_recording_mins': [1],
+        'duration_recording_mins': [20],
+        'test_recording_mins': [20],
         'sampling_freq': [100],
         'divisor': [10],
     })
@@ -93,28 +119,12 @@ def get_grid_param_list():
     # this differentiates train/test also.
     split_params = dictlistprod({
         'test_on_eval': [False],
-        'n_folds': [10],
-        'i_test_fold': list(range(10)),
+        'n_folds': [5],
+        'i_test_fold': [4],
         'shuffle': [True],
     })
 
     model_params = [
-    # {
-    #     'input_time_length': 1200,
-    #     'final_conv_length': None,
-    #     'model_name': 'linear',
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': 'defaultnorm',
-    # },
-    # {
-    #     'input_time_length': 1200,
-    #     'final_conv_length': None,
-    #     'model_name': 'linear',
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    # },
     # {
     #     'input_time_length': 6000,
     #     'final_conv_length': 35,
@@ -122,17 +132,30 @@ def get_grid_param_list():
     #     'n_start_chans': 40,
     #     'n_chan_factor': None,
     #     'model_constraint': 'defaultnorm',
-    #     'save_folder': './data/models/pytorch/auto-diag/final-eval/',#final-eval
+    #     'stride_before_pool': None,
     # },
     # {
-    #     'input_time_length': 1200,
-    #     'final_conv_length': 35,
-    #     'model_name': 'shallow',
-    #     'n_start_chans': 40,
-    #     'n_chan_factor': None,
+    #     'input_time_length': 6000,
+    #     'final_conv_length': 1,
+    #     'model_name': 'deep',
+    #     'n_start_chans': 25,
+    #     'n_chan_factor': 2,
     #     'model_constraint': 'defaultnorm',
-    #     'save_folder': './data/models/pytorch/auto-diag/final-eval/',#final-eval
+    #     'stride_before_pool': True,
     # },
+    {
+        'input_time_length': 6000,
+        'final_conv_length': 35,
+        'model_name': 'shallow',
+        'n_start_chans': 40,
+        'n_chan_factor': None,
+        'model_constraint': 'defaultnorm',
+        'stride_before_pool': None,
+        'scheduler': 'cosine',
+        #'optimizer': 'adamw',
+        #'learning_rate': 0.0625 * 0.01,
+        #'weight_decay': 0,
+    },
     {
         'input_time_length': 6000,
         'final_conv_length': 1,
@@ -140,15 +163,21 @@ def get_grid_param_list():
         'n_start_chans': 25,
         'n_chan_factor': 2,
         'model_constraint': 'defaultnorm',
+        'stride_before_pool': True,
+        'scheduler': 'cosine',
+        #'optimizer': 'adamw',
+        #'learning_rate': 1*0.01,
+        #'weight_decay': 0.5*0.001,
     },
-    {
-        'input_time_length': 6000,
-        'final_conv_length': 3,
-        'model_name': 'deep',
-        'n_start_chans': 25,
-        'n_chan_factor': 2,
-        'model_constraint': 'defaultnorm',
-    },
+    # {
+    #     'input_time_length': 1200,
+    #     'final_conv_length': 35,
+    #     'model_name': 'shallow',
+    #     'n_start_chans': 40,
+    #     'n_chan_factor': None,
+    #     'model_constraint': 'defaultnorm',
+    #     'stride_before_pool': None,
+    # },
     # {
     #     'input_time_length': 1200,
     #     'final_conv_length': 1,
@@ -156,10 +185,10 @@ def get_grid_param_list():
     #     'n_start_chans': 25,
     #     'n_chan_factor': 2,
     #     'model_constraint': 'defaultnorm',
-    #     'save_folder': './data/models/pytorch/auto-diag/final-eval/',#final-eval
+    #     'stride_before_pool': True,
     # },
     # {
-    #     'input_time_length': 6000,
+    #     'input_time_length': None, # will be overwritten
     #     'model_name': 'deep_smac',
     #     'final_conv_length': None,
     #     'n_start_chans': None,
@@ -167,61 +196,57 @@ def get_grid_param_list():
     #     'model_constraint': None,
     # },
     # {
-    #     'input_time_length': 1200,
-    #     'model_name': 'deep_smac',
-    #     'final_conv_length': None,
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    # },
-    # {
-    #     'input_time_length': 6000,
-    #     'model_name': 'deep_smac_bnorm',
-    #     'final_conv_length': None,
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    # },
-    # {
-    #     'input_time_length': 1200,
-    #     'model_name': 'deep_smac_bnorm',
-    #     'final_conv_length': None,
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    # },
-    # {
-    #     'input_time_length': 6000,
+    #     'input_time_length': None, # will be overwritten
     #     'model_name': 'shallow_smac',
     #     'final_conv_length': None,
     #     'n_start_chans': None,
     #     'n_chan_factor': None,
     #     'model_constraint': None,
-    #     'save_folder': './data/models/pytorch/auto-diag/final-smac/',#final-eval
     # },
     # {
-    #     'input_time_length': 1200,
-    #     'model_name': 'shallow_smac',
+    #     'input_time_length': None, # will be overwritten
+    #     'model_name': 'deep_smac_new',
     #     'final_conv_length': None,
     #     'n_start_chans': None,
     #     'n_chan_factor': None,
     #     'model_constraint': None,
-    #     'save_folder': './data/models/pytorch/auto-diag/final-smac/',#final-eval
+    #     'stride_before_pool': None,
     # },
-    {
-        'input_time_length': 6000,
-        'final_conv_length': None,
-        'model_name': '3path',
-        'n_start_chans': None,
-        'n_chan_factor': None,
-        'model_constraint': 'defaultnorm',
-    },
     # {
-    #     'input_time_length': 1200,
+    #     'input_time_length': None, # will be overwritten
+    #     'model_name': 'shallow_smac_new',
+    #     'final_conv_length': None,
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
+    #     'stride_before_pool': None,
+    # },
+    # {
+    #     'input_time_length': 6000,
+    #     'model_name': 'deep_smac_new',
+    #     'final_conv_length': None,
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
+    #     'stride_before_pool': None,
+    # },
+    # {
+    #     'input_time_length': 6000, # will be overwritten
+    #     'model_name': 'shallow_smac_new',
+    #     'final_conv_length': None,
+    #     'n_start_chans': None,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
+    #     'stride_before_pool': None,
+    # },
+    # {
+    #     'input_time_length': 6000,
     #     'final_conv_length': None,
     #     'model_name': '3path',
     #     'n_start_chans': None,
     #     'n_chan_factor': None,
+    #     'model_constraint': 'defaultnorm',
+    #     'stride_before_pool': None,
     # },
     ]
 
@@ -234,14 +259,7 @@ def get_grid_param_list():
     },
     ]
 
-    # sgdr_params = dictlistprod({
-    #     'optim_name': ['adam'],
-    #      'sgdr': [True],
-    #      'init_lr': [0.1,0.01,0.001],
-    #      'momentum': [None],
-    # })
-
-    optim_params = adam_params# + sgdr_params
+    optim_params = adam_params
 
     iterator_params = [{
         'batch_size':  64
@@ -254,6 +272,7 @@ def get_grid_param_list():
 
     grid_params = product_of_list_of_lists_of_dicts([
         default_params,
+        seed_params,
         save_params,
         load_params,
         clean_params,
@@ -285,62 +304,7 @@ def create_set(X, y, inds):
     return SignalAndTarget(new_X, new_y)
 
 
-class TrainValidTestSplitter(object):
-    def __init__(self, n_folds, i_test_fold, shuffle):
-        self.n_folds = n_folds
-        self.i_test_fold = i_test_fold
-        self.rng = RandomState(39483948)
-        self.shuffle = shuffle
 
-    def split(self, X, y,):
-        if len(X) < self.n_folds:
-            raise ValueError("Less Trials: {:d} than folds: {:d}".format(
-                len(X), self.n_folds
-            ))
-        folds = get_balanced_batches(len(X), self.rng, self.shuffle,
-                                     n_batches=self.n_folds)
-        test_inds = folds[self.i_test_fold]
-        valid_inds = folds[self.i_test_fold - 1]
-        all_inds = list(range(len(X)))
-        train_inds = np.setdiff1d(all_inds, np.union1d(test_inds, valid_inds))
-        assert np.intersect1d(train_inds, valid_inds).size == 0
-        assert np.intersect1d(train_inds, test_inds).size == 0
-        assert np.intersect1d(valid_inds, test_inds).size == 0
-        assert np.array_equal(np.sort(
-            np.union1d(train_inds, np.union1d(valid_inds, test_inds))),
-            all_inds)
-
-        train_set = create_set(X, y, train_inds)
-        valid_set = create_set(X, y, valid_inds)
-        test_set = create_set(X, y, test_inds)
-
-        return train_set, valid_set, test_set
-
-
-class TrainValidSplitter(object):
-    def __init__(self, n_folds, i_valid_fold, shuffle):
-        self.n_folds = n_folds
-        self.i_valid_fold = i_valid_fold
-        self.rng = RandomState(39483948)
-        self.shuffle = shuffle
-
-    def split(self, X, y):
-        if len(X) < self.n_folds:
-            raise ValueError("Less Trials: {:d} than folds: {:d}".format(
-                len(X), self.n_folds
-            ))
-        folds = get_balanced_batches(len(X), self.rng, self.shuffle,
-                                     n_batches=self.n_folds)
-        valid_inds = folds[self.i_valid_fold]
-        all_inds = list(range(len(X)))
-        train_inds = np.setdiff1d(all_inds, valid_inds)
-        assert np.intersect1d(train_inds, valid_inds).size == 0
-        assert np.array_equal(np.sort(np.union1d(train_inds, valid_inds)),
-            all_inds)
-
-        train_set = create_set(X, y, train_inds)
-        valid_set = create_set(X, y, valid_inds)
-        return train_set, valid_set
 
 
 def running_mean(arr, window_len, axis=0):
@@ -400,97 +364,19 @@ def run_exp(test_on_eval,
             model_name,
             n_start_chans, n_chan_factor,
             input_time_length, final_conv_length,
+            stride_before_pool,
             model_constraint,
-            optim_name,
-            sgdr,
-            init_lr,
-            momentum,
             batch_size, max_epochs,
-            only_return_exp):
+            only_return_exp,
+            np_th_seed):
+
     cuda = True
-    import torch.backends.cudnn as cudnn
-    cudnn.benchmark = True
-    preproc_functions = []
-    preproc_functions.append(
-        lambda data, fs: (data[:, int(sec_to_cut * fs):-int(
-            sec_to_cut * fs)], fs))
-    preproc_functions.append(
-        lambda data, fs: (data[:, :int(duration_recording_mins * 60 * fs)], fs))
-    if max_abs_val is not None:
-        preproc_functions.append(lambda data, fs:
-                                 (np.clip(data, -max_abs_val, max_abs_val), fs))
-    if shrink_val is not None:
-        preproc_functions.append(lambda data, fs:
-                                 (shrink_spikes(
-                                     data, shrink_val, 1, 9,), fs))
-
-    preproc_functions.append(lambda data, fs: (resampy.resample(data, fs,
-                                                                sampling_freq,
-                                                                axis=1,
-                                                                filter='kaiser_fast'),
-                                               sampling_freq))
-
-    if divisor is not None:
-        preproc_functions.append(lambda data, fs: (data / divisor, fs))
-
-    dataset = DiagnosisSet(n_recordings=n_recordings,
-                           max_recording_mins=max_recording_mins,
-                           preproc_functions=preproc_functions,
-                           train_or_eval='train',
-                           sensor_types=sensor_types)
-    if test_on_eval:
-        if test_recording_mins is None:
-            test_recording_mins = duration_recording_mins
-        test_preproc_functions = copy(preproc_functions)
-        test_preproc_functions[1] = lambda data, fs: (
-            data[:, :int(test_recording_mins * 60 * fs)], fs)
-        test_dataset = DiagnosisSet(n_recordings=n_recordings,
-                                max_recording_mins=None,
-                                preproc_functions=test_preproc_functions,
-                                train_or_eval='eval',
-                                sensor_types=sensor_types)
-    if not only_return_exp:
-        X,y = dataset.load()
-        max_shape = np.max([list(x.shape) for x in X],
-                           axis=0)
-        assert max_shape[1] == int(duration_recording_mins *
-                                   sampling_freq * 60)
-        if test_on_eval:
-            test_X, test_y = test_dataset.load()
-            max_shape = np.max([list(x.shape) for x in test_X],
-                               axis=0)
-            assert max_shape[1] == int(test_recording_mins *
-                                       sampling_freq * 60)
-    if not test_on_eval:
-        splitter = TrainValidTestSplitter(n_folds, i_test_fold,
-                                          shuffle=shuffle)
+    if ('smac' in model_name) and (input_time_length is None):
+        input_time_length = 12000
+        fix_input_length_for_smac = True
     else:
-        splitter = TrainValidSplitter(n_folds, i_valid_fold=i_test_fold,
-                                          shuffle=shuffle)
-    if not only_return_exp:
-        if not test_on_eval:
-            train_set, valid_set, test_set = splitter.split(X, y)
-            if sgdr:
-                train_set = concatenate_sets([train_set, valid_set])
-                # dummy valid set...
-                valid_set.X = valid_set.X[:3]
-                valid_set.y = valid_set.y[:3]
-        else:
-            if not sgdr:
-                train_set, valid_set = splitter.split(X, y)
-            else:
-                # dummy valid set...
-                train_set = SignalAndTarget(X,y)
-                valid_set = SignalAndTarget(X[:3], y[:3])
-            test_set = SignalAndTarget(test_X, test_y)
-            del test_X, test_y
-        del X,y # shouldn't be necessary, but just to make sure
-    else:
-        train_set = None
-        valid_set = None
-        test_set = None
-
-    set_random_seeds(seed=20170629, cuda=cuda)
+        fix_input_length_for_smac = False
+    set_random_seeds(seed=np_th_seed, cuda=cuda)
     n_classes = 2
     if model_name == 'shallow':
         model = ShallowFBCSPNet(in_chans=n_chans, n_classes=n_classes,
@@ -507,7 +393,7 @@ def run_exp(test_on_eval,
                          n_filters_3 = int(n_start_chans * (n_chan_factor ** 2.0)),
                          n_filters_4 = int(n_start_chans * (n_chan_factor ** 3.0)),
                          final_conv_length=final_conv_length,
-                        stride_before_pool=True).create_network()
+                        stride_before_pool=stride_before_pool).create_network()
     elif (model_name == 'deep_smac') or (model_name == 'deep_smac_bnorm'):
         if model_name == 'deep_smac':
             do_batch_norm = False
@@ -587,6 +473,62 @@ def run_exp(test_on_eval,
                                 pool_time_stride=pool_time_stride,
                                 split_first_layer=split_first_layer,
                                 ).create_network()
+    elif model_name == 'deep_smac_new':
+        from torch.nn.functional import elu, relu, relu6, tanh
+        from braindecode.torch_ext.functions import identity, square, safe_log
+        n_filters_factor = 1.9532637176784269
+        n_filters_start = 61
+
+        deep_kwargs = {
+            "batch_norm": False,
+            "double_time_convs": False,
+            "drop_prob": 0.3622676569047184,
+            "filter_length_2": 9,
+            "filter_length_3": 6,
+            "filter_length_4": 10,
+            "filter_time_length": 17,
+            "final_conv_length": 5,
+            "first_nonlin": elu,
+            "first_pool_mode": "max",
+            "first_pool_nonlin": identity,
+            "later_nonlin": relu6,
+            "later_pool_mode": "max",
+            "later_pool_nonlin": identity,
+            "n_filters_time": n_filters_start,
+            "n_filters_spat": n_filters_start,
+            "n_filters_2": int(n_filters_start * n_filters_factor),
+            "n_filters_3": int(n_filters_start * (n_filters_factor ** 2.0)),
+            "n_filters_4": int(n_filters_start * (n_filters_factor ** 3.0)),
+            "pool_time_length": 1,
+            "pool_time_stride": 4,
+            "split_first_layer": True,
+            "stride_before_pool": True,
+        }
+
+        model = Deep4Net(n_chans, n_classes, input_time_length=input_time_length,
+                         **deep_kwargs).create_network()
+    elif model_name == 'shallow_smac_new':
+        from torch.nn.functional import elu, relu, relu6, tanh
+        from braindecode.torch_ext.functions import identity, square, safe_log
+        shallow_kwargs = {
+            "conv_nonlin": square,
+            "batch_norm": True,
+            "drop_prob": 0.10198630723385381,
+            "filter_time_length": 51,
+            "final_conv_length": 1,
+            "n_filters_spat": 200,
+            "n_filters_time": 76,
+            "pool_mode": "max",
+            "pool_nonlin": safe_log,
+            "pool_time_length": 139,
+            "pool_time_stride": 49,
+            "split_first_layer": True,
+        }
+
+        model = ShallowFBCSPNet(in_chans=n_chans, n_classes=n_classes,
+                                input_time_length=input_time_length,
+                                **shallow_kwargs
+                                ).create_network()
     elif model_name == 'linear':
         model = nn.Sequential()
         model.add_module("conv_classifier",
@@ -616,67 +558,45 @@ def run_exp(test_on_eval,
     if not model_name == '3path':
         to_dense_prediction_model(model)
     log.info("Model:\n{:s}".format(str(model)))
-    if cuda:
-        model.cuda()
-    # determine output size
-    test_input = np_to_var(
-        np.ones((2, n_chans, input_time_length, 1), dtype=np.float32))
-    if cuda:
-        test_input = test_input.cuda()
-    log.info("In shape: {:s}".format(str(test_input.cpu().data.numpy().shape)))
+    time_cut_off_sec = np.inf
+    start_time = time.time()
 
-    out = model(test_input)
-    log.info("Out shape: {:s}".format(str(out.cpu().data.numpy().shape)))
-    n_preds_per_input = out.cpu().data.numpy().shape[2]
-    if model_name == '3path':
-        n_preds_per_input = input_time_length // 2
-    log.info("{:d} predictions per input/trial".format(n_preds_per_input))
-    iterator = CropsFromTrialsIterator(batch_size=batch_size,
-                                       input_time_length=input_time_length,
-                                       n_preds_per_input=n_preds_per_input)
-    if optim_name == 'adam':
-        optimizer = optim.Adam(model.parameters(), lr=init_lr)
-    else:
-        assert optim_name == 'sgd'
-        optimizer = optim.SGD(model.parameters(), momentum=momentum,
-                        lr=init_lr)
-    if sgdr:
-        n_batches = sum(
-            [1 for _ in iterator.get_batches(train_set, shuffle=False)])
+    # fix input time length in case of smac models
+    if fix_input_length_for_smac:
+        assert ('smac' in model_name) and (input_time_length == 12000)
+        if cuda:
+            model.cuda()
+        test_input = np_to_var(
+            np.ones((2, n_chans, input_time_length, 1), dtype=np.float32))
+        if cuda:
+            test_input = test_input.cuda()
+        try:
+            out = model(test_input)
+        except:
+            raise ValueError("Model receptive field too large...")
+        n_preds_per_input = out.cpu().data.numpy().shape[2]
+        n_receptive_field = input_time_length - n_preds_per_input
+        input_time_length = 2 * n_receptive_field
 
-        optimizer = ScheduledOptimizer(CosineWithWarmRestarts(
-            optimizer, batch_period=max_epochs * n_batches, base_lr=init_lr))
-
-    loss_function = lambda preds, targets: F.nll_loss(
-        th.mean(preds, dim=2, keepdim=False), targets)
-
-    if model_constraint is not None:
-        assert model_constraint == 'defaultnorm'
-        model_constraint = MaxNormDefaultConstraint()
-    monitors = [LossMonitor(), MisclassMonitor(col_suffix='sample_misclass'),
-                CroppedDiagnosisMonitor(input_time_length, n_preds_per_input),
-                RuntimeMonitor(),]
-    stop_criterion = MaxEpochs(max_epochs)
-    batch_modifier = None
-    run_after_early_stop = True
-    exp = Experiment(model, train_set, valid_set, test_set, iterator,
-                     loss_function, optimizer, model_constraint,
-                     monitors, stop_criterion,
-                     remember_best_column='valid_misclass',
-                     run_after_early_stop=run_after_early_stop,
-                     batch_modifier=batch_modifier,
-                     cuda=cuda)
-    if not only_return_exp:
-        if not sgdr:
-            exp.run()
-        else:
-            exp.setup_training()
-            exp.run_until_early_stop()
-    else:
-        exp.dataset = dataset
-        exp.splitter = splitter
-        if test_on_eval:
-            exp.test_dataset = test_dataset
+    exp = common.run_exp(
+        max_recording_mins, n_recordings,
+        sec_to_cut, duration_recording_mins, max_abs_val,
+        shrink_val,
+        sampling_freq,
+        divisor,
+        n_folds, i_test_fold,
+        shuffle,
+        model,
+        input_time_length,
+        model_constraint,
+        batch_size, max_epochs,
+        only_return_exp,
+        time_cut_off_sec,
+        start_time,
+        test_on_eval,
+        test_recording_mins,
+        sensor_types,
+        np_th_seed,)
 
     return exp
 
@@ -710,13 +630,14 @@ def run(ex,
         n_folds, i_test_fold,
         shuffle,
         model_name, input_time_length, final_conv_length,
+        stride_before_pool,
         n_start_chans, n_chan_factor,
         model_constraint,
-        optim_name,
-        sgdr, init_lr, momentum,
+        scheduler,
         batch_size, max_epochs,
         save_predictions,
         save_crop_predictions,
+        np_th_seed,
         only_return_exp):
     kwargs = locals()
     kwargs.pop('ex')
@@ -727,6 +648,7 @@ def run(ex,
                      level=logging.DEBUG, stream=sys.stdout)
     start_time = time.time()
     ex.info['finished'] = False
+    confirm_gpu_availability()
 
     exp = run_exp(**kwargs)
     end_time = time.time()
