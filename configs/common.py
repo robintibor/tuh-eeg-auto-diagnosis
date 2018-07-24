@@ -174,7 +174,6 @@ def run_exp(max_recording_mins, n_recordings,
             sensor_types,
             log_dir,
             np_th_seed):
-    sgdr=False
     cuda = True
     import torch.backends.cudnn as cudnn
     cudnn.benchmark = True
@@ -245,6 +244,11 @@ def run_exp(max_recording_mins, n_recordings,
             test_set = SignalAndTarget(test_X, test_y)
             del test_X, test_y
         del X,y # shouldn't be necessary, but just to make sure
+        if merge_train_valid:
+            train_set = concatenate_sets([train_set, valid_set])
+            # just reduce valid for faster computations
+            valid_set.X = valid_set.X[:8]
+            valid_set.y = valid_set.y[:8]
     else:
         train_set = None
         valid_set = None
@@ -276,6 +280,7 @@ def run_exp(max_recording_mins, n_recordings,
         optim_class = optim.Adam
     else:
         optim_class = AdamW
+        assert schedule_weight_decay == True
 
     optimizer = optim_class(
         model.parameters(), lr=learning_rate, weight_decay=weight_decay)
@@ -338,10 +343,6 @@ def run_exp(max_recording_mins, n_recordings,
                                       exp.optimizer)
 
         exp.iterator.reset_rng()
-        if merge_train_valid:
-            datasets = exp.datasets
-            datasets['train'] = concatenate_sets([datasets['train'],
-                                                  datasets['valid']])
         while not exp.stop_criterion.should_stop(exp.epochs_df):
             if (time.time() - start_time) > time_cut_off_sec:
                 log.info("Ran out of time after {:.2f} sec.".format(
