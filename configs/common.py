@@ -177,6 +177,12 @@ def run_exp(max_recording_mins, n_recordings,
     cuda = True
     import torch.backends.cudnn as cudnn
     cudnn.benchmark = True
+    if optimizer == 'adam':
+        assert merge_train_valid == False
+    else:
+        assert optimizer == 'adamw'
+        assert merge_train_valid == True
+
 
     preproc_functions = []
     preproc_functions.append(
@@ -272,15 +278,19 @@ def run_exp(max_recording_mins, n_recordings,
     log.info("{:d} predictions per input/trial".format(n_preds_per_input))
     iterator = CropsFromTrialsIterator(batch_size=batch_size,
                                        input_time_length=input_time_length,
-                                      n_preds_per_input=n_preds_per_input)
+                                      n_preds_per_input=n_preds_per_input,
+                                       seed=np_th_seed)
     assert optimizer in ['adam', 'adamw'], ("Expect optimizer to be either "
                                             "adam or adamw")
     schedule_weight_decay = optimizer == 'adamw'
     if optimizer == 'adam':
         optim_class = optim.Adam
+        assert schedule_weight_decay == False
+        assert merge_train_valid == False
     else:
         optim_class = AdamW
         assert schedule_weight_decay == True
+        assert merge_train_valid == True
 
     optimizer = optim_class(
         model.parameters(), lr=learning_rate, weight_decay=weight_decay)
