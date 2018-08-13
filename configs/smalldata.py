@@ -93,12 +93,11 @@ def get_grid_param_list():
 
     load_params = [{
         'max_recording_mins': 35,
-        'n_recordings': 3000,
+        'n_recordings': 500,
     }]
 
     clean_params = [{
         'max_abs_val': 800,
-        'shrink_val': None
     }]
 
     sensor_params = [{
@@ -109,11 +108,12 @@ def get_grid_param_list():
 
 
     preproc_params = dictlistprod({
-        'sec_to_cut': [60],
-        'duration_recording_mins': [20],
-        'test_recording_mins': [20],
+        'sec_to_cut_at_start': [60],
+        'sec_to_cut_at_end': [60],
+        'duration_recording_mins': [3],
+        'test_recording_mins': [None],
         'sampling_freq': [100],
-        'divisor': [10],
+        'divisor': [None, 10], # 10 before
     })
 
     # this differentiates train/test also.
@@ -153,46 +153,18 @@ def get_grid_param_list():
     #     'weight_decay': 0,
     #     'merge_train_valid': False,
     # },
-    # {
-    #     'input_time_length': 6000,
-    #     'final_conv_length': 35,
-    #     'model_name': 'shallow',
-    #     'n_start_chans': 40,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    #     'stride_before_pool': None,
-    #     'scheduler': 'cosine',
-    #     'optimizer': 'adamw',
-    #     'learning_rate': 0.0625 * 0.01,
-    #     'weight_decay': 0,
-    #     'merge_train_valid': True,
-    # },
-    # {
-    #     'input_time_length': 6000,
-    #     'final_conv_length': 1,
-    #     'model_name': 'deep',
-    #     'n_start_chans': 25,
-    #     'n_chan_factor': 2,
-    #     'model_constraint': None,
-    #     'stride_before_pool': True,
-    #     'scheduler': 'cosine',
-    #     'optimizer': 'adamw',
-    #     'learning_rate': 1*0.01,
-    #     'weight_decay': 0.5*0.001,
-    #     'merge_train_valid': True,
-    # },
     {
         'input_time_length': 6000,
-        'final_conv_length': 1,
-        'model_name': 'deep',
-        'n_start_chans': 25,
-        'n_chan_factor': 2,
+        'final_conv_length': 35,
+        'model_name': 'shallow',
+        'n_start_chans': 40,
+        'n_chan_factor': None,
         'model_constraint': None,
-        'stride_before_pool': True,
+        'stride_before_pool': None,
         'scheduler': 'cosine',
         'optimizer': 'adamw',
-        'learning_rate': 1*0.01,
-        'weight_decay': 1*0.001,
+        'learning_rate': 0.0625 * 0.01,
+        'weight_decay': 0,
         'merge_train_valid': True,
     },
     {
@@ -206,102 +178,9 @@ def get_grid_param_list():
         'scheduler': 'cosine',
         'optimizer': 'adamw',
         'learning_rate': 1*0.01,
-        'weight_decay': 0.1*0.001,
+        'weight_decay': 0.5*0.001,
         'merge_train_valid': True,
     },
-    {
-        'input_time_length': 6000,
-        'final_conv_length': 1,
-        'model_name': 'deep',
-        'n_start_chans': 25,
-        'n_chan_factor': 2,
-        'model_constraint': None,
-        'stride_before_pool': True,
-        'scheduler': 'cosine',
-        'optimizer': 'adamw',
-        'learning_rate': 1*0.01,
-        'weight_decay': 0.05*0.001,
-        'merge_train_valid': True,
-    },
-    # {
-    #     'input_time_length': 1200,
-    #     'final_conv_length': 35,
-    #     'model_name': 'shallow',
-    #     'n_start_chans': 40,
-    #     'n_chan_factor': None,
-    #     'model_constraint': 'defaultnorm',
-    #     'stride_before_pool': None,
-    # },
-    # {
-    #     'input_time_length': 1200,
-    #     'final_conv_length': 1,
-    #     'model_name': 'deep',
-    #     'n_start_chans': 25,
-    #     'n_chan_factor': 2,
-    #     'model_constraint': 'defaultnorm',
-    #     'stride_before_pool': True,
-    # },
-    # {
-    #     'input_time_length': None, # will be overwritten
-    #     'model_name': 'deep_smac',
-    #     'final_conv_length': None,
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    # },
-    # {
-    #     'input_time_length': None, # will be overwritten
-    #     'model_name': 'shallow_smac',
-    #     'final_conv_length': None,
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    # },
-    # {
-    #     'input_time_length': None, # will be overwritten
-    #     'model_name': 'deep_smac_new',
-    #     'final_conv_length': None,
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    #     'stride_before_pool': None,
-    # },
-    # {
-    #     'input_time_length': None, # will be overwritten
-    #     'model_name': 'shallow_smac_new',
-    #     'final_conv_length': None,
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    #     'stride_before_pool': None,
-    # },
-    # {
-    #     'input_time_length': 6000,
-    #     'model_name': 'deep_smac_new',
-    #     'final_conv_length': None,
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    #     'stride_before_pool': None,
-    # },
-    # {
-    #     'input_time_length': 6000, # will be overwritten
-    #     'model_name': 'shallow_smac_new',
-    #     'final_conv_length': None,
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': None,
-    #     'stride_before_pool': None,
-    # },
-    # {
-    #     'input_time_length': 6000,
-    #     'final_conv_length': None,
-    #     'model_name': '3path',
-    #     'n_start_chans': None,
-    #     'n_chan_factor': None,
-    #     'model_constraint': 'defaultnorm',
-    #     'stride_before_pool': None,
-    # },
     ]
 
 
@@ -347,59 +226,15 @@ def create_set(X, y, inds):
     return SignalAndTarget(new_X, new_y)
 
 
-
-
-
-def running_mean(arr, window_len, axis=0):
-    # adapted from http://stackoverflow.com/a/27681394/1469195
-    # need to pad to get correct first value also
-    arr_padded = np.insert(arr,0,values=0,axis=axis)
-    cumsum = np.cumsum(arr_padded,axis=axis)
-    later_sums = np.take(cumsum, range(window_len, arr_padded.shape[axis]),
-        axis=axis)
-    earlier_sums = np.take(cumsum, range(0, arr_padded.shape[axis] - window_len),
-        axis=axis)
-
-    moving_average = (later_sums - earlier_sums) / float(window_len)
-    return moving_average
-
-
-def padded_moving_mean(arr, axis, n_window):
-    """Pads by replicating n_window first and last elements
-    and putting them at end and start (no reflection)"""
-    start_pad_inds = list(range(0, n_window // 2))
-    end_pad_inds = list(range(arr.shape[axis] - (n_window // 2),
-                              arr.shape[axis]))
-    arr = np.concatenate((arr.take(start_pad_inds, axis=axis),
-                          arr,
-                          arr.take(end_pad_inds, axis=axis)),
-                         axis=axis)
-    mov_mean = running_mean(arr, window_len=n_window, axis=axis)
-    return mov_mean
-
-
-def shrink_spikes(example, threshold, axis, n_window):
-    """Example could be single example or all...
-    should work for both."""
-    run_mean = padded_moving_mean(example.astype(np.float32),
-        axis=axis, n_window=n_window)
-    abs_run_mean = np.abs(run_mean)
-    is_relevant = (abs_run_mean > threshold)
-
-    cleaned_example = example - is_relevant * (run_mean - (
-             np.sign(run_mean) * (threshold +
-            np.log(np.maximum(abs_run_mean - threshold + 1, 0.01)))))
-    return cleaned_example
-
-
 def run_exp(test_on_eval,
             sensor_types,
             n_chans,
             max_recording_mins,
             test_recording_mins,
             n_recordings,
-            sec_to_cut, duration_recording_mins, max_abs_val,
-            shrink_val,
+            sec_to_cut_at_start,
+            sec_to_cut_at_end,
+            duration_recording_mins, max_abs_val,
             sampling_freq,
             divisor,
             n_folds, i_test_fold,
@@ -629,8 +464,8 @@ def run_exp(test_on_eval,
 
     exp = common.run_exp(
         max_recording_mins, n_recordings,
-        sec_to_cut, duration_recording_mins, max_abs_val,
-        shrink_val,
+        sec_to_cut_at_start, sec_to_cut_at_end,
+        duration_recording_mins, max_abs_val,
         sampling_freq,
         divisor,
         n_folds, i_test_fold,
@@ -676,10 +511,10 @@ def run(ex,
         sensor_types,
         n_chans,
         max_recording_mins, n_recordings,
-        sec_to_cut, duration_recording_mins,
+        sec_to_cut_at_start, sec_to_cut_at_end,
+        duration_recording_mins,
         test_recording_mins,
         max_abs_val,
-        shrink_val,
         sampling_freq,
         divisor,
         n_folds, i_test_fold,

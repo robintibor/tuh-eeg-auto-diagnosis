@@ -108,51 +108,10 @@ class TrainValidSplitter(object):
         valid_set = create_set(X, y, valid_inds)
         return train_set, valid_set
 
-def running_mean(arr, window_len, axis=0):
-    # adapted from http://stackoverflow.com/a/27681394/1469195
-    # need to pad to get correct first value also
-    arr_padded = np.insert(arr,0,values=0,axis=axis)
-    cumsum = np.cumsum(arr_padded,axis=axis)
-    later_sums = np.take(cumsum, range(window_len, arr_padded.shape[axis]),
-        axis=axis)
-    earlier_sums = np.take(cumsum, range(0, arr_padded.shape[axis] - window_len),
-        axis=axis)
-
-    moving_average = (later_sums - earlier_sums) / float(window_len)
-    return moving_average
-
-
-def padded_moving_mean(arr, axis, n_window):
-    """Pads by replicating n_window first and last elements
-    and putting them at end and start (no reflection)"""
-    start_pad_inds = list(range(0, n_window // 2))
-    end_pad_inds = list(range(arr.shape[axis] - (n_window // 2),
-                              arr.shape[axis]))
-    arr = np.concatenate((arr.take(start_pad_inds, axis=axis),
-                          arr,
-                          arr.take(end_pad_inds, axis=axis)),
-                         axis=axis)
-    mov_mean = running_mean(arr, window_len=n_window, axis=axis)
-    return mov_mean
-
-
-def shrink_spikes(example, threshold, axis, n_window):
-    """Example could be single example or all...
-    should work for both."""
-    run_mean = padded_moving_mean(example.astype(np.float32),
-        axis=axis, n_window=n_window)
-    abs_run_mean = np.abs(run_mean)
-    is_relevant = (abs_run_mean > threshold)
-
-    cleaned_example = example - is_relevant * (run_mean - (
-             np.sign(run_mean) * (threshold +
-            np.log(np.maximum(abs_run_mean - threshold + 1, 0.01)))))
-    return cleaned_example
-
 
 def run_exp(max_recording_mins, n_recordings,
-            sec_to_cut, duration_recording_mins, max_abs_val,
-            shrink_val,
+            sec_to_cut_at_start, sec_to_cut_at_end,
+            duration_recording_mins, max_abs_val,
             sampling_freq,
             divisor,
             n_folds, i_test_fold,
@@ -185,18 +144,17 @@ def run_exp(max_recording_mins, n_recordings,
 
 
     preproc_functions = []
-    preproc_functions.append(
-        lambda data, fs: (data[:, int(sec_to_cut * fs):-int(
-            sec_to_cut * fs)], fs))
+    if sec_to_cut_at_start is not None:
+        preproc_functions.append(
+            lambda data, fs: (data[:, int(sec_to_cut_at_start * fs):], fs))
+    if sec_to_cut_at_end is not None:
+        preproc_functions.append(
+            lambda data, fs: (data[:, :-int(sec_to_cut_at_end * fs)], fs))
     preproc_functions.append(
         lambda data, fs: (data[:, :int(duration_recording_mins * 60 * fs)], fs))
     if max_abs_val is not None:
         preproc_functions.append(lambda data, fs:
                                  (np.clip(data, -max_abs_val, max_abs_val), fs))
-    if shrink_val is not None:
-        preproc_functions.append(lambda data, fs:
-                                 (shrink_spikes(
-                                     data, shrink_val, 1, 9,), fs))
 
     preproc_functions.append(lambda data, fs: (resampy.resample(data, fs,
                                                                 sampling_freq,
@@ -348,7 +306,7 @@ def run_exp(max_recording_mins, n_recordings,
         # Until first stop
         exp.setup_training()
         exp.monitor_epoch(exp.datasets)
-        exp.print_epoch()
+        exp.log_epoch()
         exp.rememberer.remember_epoch(exp.epochs_df, exp.model,
                                       exp.optimizer)
 
@@ -372,7 +330,7 @@ def run_exp(max_recording_mins, n_recordings,
             datasets['train'] = concatenate_sets([datasets['train'],
                                                  datasets['valid']])
             exp.monitor_epoch(datasets)
-            exp.print_epoch()
+            exp.log_epoch()
 
             exp.iterator.reset_rng()
             while not exp.stop_criterion.should_stop(exp.epochs_df):
@@ -391,4 +349,3 @@ def run_exp(max_recording_mins, n_recordings,
         exp.test_dataset = test_dataset
 
     return exp
-
