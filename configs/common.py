@@ -278,7 +278,7 @@ def run_exp(max_recording_mins, n_recordings,
 
 
     stop_criterion = MaxEpochs(max_epochs)
-    loggers  = [Printer()]#, TensorboardWriter(log_dir)]
+    loggers  = [Printer(), TensorboardWriter(log_dir)]
     batch_modifier = None
     exp = Experiment(model, train_set, valid_set, test_set, iterator,
                      loss_function, optimizer, model_constraint,
@@ -287,11 +287,6 @@ def run_exp(max_recording_mins, n_recordings,
                      run_after_early_stop=True, batch_modifier=batch_modifier,
                      cuda=cuda,
                      loggers=loggers)
-    # DELETE DELETE
-    import pickle
-    exp_filename = '/data/schirrmr/schirrmr/auto-diag/lukasrepr/compare/robin-0.2.1-cpu/exp.pkl'
-    pickle.dump(exp, open(exp_filename, 'wb'))
-    print("Saved to {:s}".format(exp_filename))
 
     if not only_return_exp:
         # Until first stop
