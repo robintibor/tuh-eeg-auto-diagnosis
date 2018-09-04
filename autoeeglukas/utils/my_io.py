@@ -16,11 +16,10 @@ def natural_key(file_name):
     return key
 
 
-# ______________________________________________________________________________________________________________________
+
 def session_key(file_name):
     """ sort the file name by session """
-    return re.findall(r'(s\d{2})', file_name)
-
+    return re.findall(r'(s\d*)_', file_name)
 
 # ______________________________________________________________________________________________________________________
 def time_key(file_name):

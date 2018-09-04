@@ -78,7 +78,7 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': '/data/schirrmr/schirrmr/models/auto-diag/small-data-comparison/',
+        'save_folder': '/data/schirrmr/schirrmr/models/auto-diag/small-data-comparison-resampy-0.2.1/',
         'only_return_exp': False,
     }]
 
@@ -109,7 +109,7 @@ def get_grid_param_list():
 
     preproc_params = dictlistprod({
         'sec_to_cut_at_start': [60],
-        'sec_to_cut_at_end': [60],
+        'sec_to_cut_at_end': [0],
         'duration_recording_mins': [3],
         'test_recording_mins': [None],
         'sampling_freq': [100],

@@ -144,10 +144,10 @@ def run_exp(max_recording_mins, n_recordings,
 
 
     preproc_functions = []
-    if sec_to_cut_at_start is not None:
+    if (sec_to_cut_at_start is not None) and (sec_to_cut_at_start > 0):
         preproc_functions.append(
             lambda data, fs: (data[:, int(sec_to_cut_at_start * fs):], fs))
-    if sec_to_cut_at_end is not None:
+    if (sec_to_cut_at_end is not None) and (sec_to_cut_at_end > 0):
         preproc_functions.append(
             lambda data, fs: (data[:, :-int(sec_to_cut_at_end * fs)], fs))
     preproc_functions.append(
