@@ -29,10 +29,12 @@ from braindecode.torch_ext.constraints import MaxNormDefaultConstraint
 from braindecode.torch_ext.optimizers import AdamW
 from braindecode.torch_ext.schedulers import CosineAnnealing, ScheduledOptimizer
 from braindecode.datautil.splitters import concatenate_sets
+from braindecode.experiments.loggers import Printer, TensorboardWriter
 from copy import copy
 
 
 from autodiag.dataset import  DiagnosisSet
+from autodiag.losses import nll_loss_on_mean
 
 log = logging.getLogger(__name__)
 
@@ -112,6 +114,7 @@ class TrainValidSplitter(object):
 def run_exp(max_recording_mins, n_recordings,
             sec_to_cut_at_start, sec_to_cut_at_end,
             duration_recording_mins, max_abs_val,
+            clip_before_resample,
             sampling_freq,
             divisor,
             n_folds, i_test_fold,
@@ -132,8 +135,8 @@ def run_exp(max_recording_mins, n_recordings,
             test_recording_mins,
             sensor_types,
             log_dir,
-            np_th_seed):
-    cuda = True
+            np_th_seed,
+            cuda=True):
     import torch.backends.cudnn as cudnn
     cudnn.benchmark = True
     if optimizer == 'adam':
@@ -152,7 +155,7 @@ def run_exp(max_recording_mins, n_recordings,
             lambda data, fs: (data[:, :-int(sec_to_cut_at_end * fs)], fs))
     preproc_functions.append(
         lambda data, fs: (data[:, :int(duration_recording_mins * 60 * fs)], fs))
-    if max_abs_val is not None:
+    if (max_abs_val is not None) and (clip_before_resample):
         preproc_functions.append(lambda data, fs:
                                  (np.clip(data, -max_abs_val, max_abs_val), fs))
 
@@ -161,6 +164,9 @@ def run_exp(max_recording_mins, n_recordings,
                                                                 axis=1,
                                                                 filter='kaiser_fast'),
                                                sampling_freq))
+    if (max_abs_val is not None) and (not clip_before_resample):
+        preproc_functions.append(lambda data, fs:
+                                 (np.clip(data, -max_abs_val, max_abs_val), fs))
     if divisor is not None:
         preproc_functions.append(lambda data, fs: (data / divisor, fs))
 
@@ -261,8 +267,7 @@ def run_exp(max_recording_mins, n_recordings,
         scheduler = CosineAnnealing(n_updates_per_period)
         optimizer = ScheduledOptimizer(scheduler, optimizer,
                                        schedule_weight_decay=schedule_weight_decay)
-    loss_function = lambda preds, targets: F.nll_loss(
-        th.mean(preds, dim=2, keepdim=False), targets)
+    loss_function = nll_loss_on_mean
 
     if model_constraint is not None:
         assert model_constraint == 'defaultnorm'
@@ -271,37 +276,23 @@ def run_exp(max_recording_mins, n_recordings,
                 CroppedDiagnosisMonitor(input_time_length, n_preds_per_input),
                 RuntimeMonitor(),]
 
-    ## HACK: use stop criterion for tensorboard logging
-    class LoggingCriterion(object):
-        """
-        Fake criterion, actually for logging.
 
-        Parameters
-        ----------
-        max_epochs: int
-        """
-
-        def __init__(self, log_dir):
-            self.writer = SummaryWriter(log_dir)
-
-        def should_stop(self, epochs_df):
-            iteration = len(epochs_df)
-            last_row = dict(epochs_df.iloc[-1])
-            for key in last_row:
-                val = last_row[key]
-                self.writer.add_scalar(key, val, iteration)
-
-            # Keep in mind  epoch 0 without training is also part of dataframe
-            return False
-
-    stop_criterion = Or([MaxEpochs(max_epochs), LoggingCriterion(log_dir)])
+    stop_criterion = MaxEpochs(max_epochs)
+    loggers  = [Printer()]#, TensorboardWriter(log_dir)]
     batch_modifier = None
     exp = Experiment(model, train_set, valid_set, test_set, iterator,
                      loss_function, optimizer, model_constraint,
                      monitors, stop_criterion,
                      remember_best_column='valid_misclass',
                      run_after_early_stop=True, batch_modifier=batch_modifier,
-                     cuda=cuda)
+                     cuda=cuda,
+                     loggers=loggers)
+    # DELETE DELETE
+    import pickle
+    exp_filename = '/data/schirrmr/schirrmr/auto-diag/lukasrepr/compare/robin-0.2.1-cpu/exp.pkl'
+    pickle.dump(exp, open(exp_filename, 'wb'))
+    print("Saved to {:s}".format(exp_filename))
+
     if not only_return_exp:
         # Until first stop
         exp.setup_training()

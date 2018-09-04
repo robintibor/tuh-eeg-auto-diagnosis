@@ -1,3 +1,6 @@
+import torch.nn.functional as F
+import torch as th
+
 def binary_cross_entropy_with_logits(input, target, weight=None, size_average=True):
     r"""Function that measures Binary Cross Entropy between target and output
     logits:
@@ -25,3 +28,6 @@ def binary_cross_entropy_with_logits(input, target, weight=None, size_average=Tr
         return loss.mean()
     else:
         return loss.sum()
+
+def nll_loss_on_mean(preds, targets):
+    return F.nll_loss(th.mean(preds, dim=2, keepdim=False), targets)
