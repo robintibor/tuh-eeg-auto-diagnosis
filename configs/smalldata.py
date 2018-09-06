@@ -114,6 +114,7 @@ def get_grid_param_list():
         'test_recording_mins': [None],
         'sampling_freq': [100],
         'divisor': [None, 10], # 10 before
+        'clip_before_resample': [False],
     })
 
     # this differentiates train/test also.
@@ -467,6 +468,7 @@ def run_exp(test_on_eval,
         max_recording_mins, n_recordings,
         sec_to_cut_at_start, sec_to_cut_at_end,
         duration_recording_mins, max_abs_val,
+        clip_before_resample,
         sampling_freq,
         divisor,
         n_folds, i_test_fold,

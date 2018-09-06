@@ -226,7 +226,6 @@ def run_exp(max_recording_mins, n_recordings,
 
     set_random_seeds(seed=np_th_seed, cuda=cuda)
 
-    #optimizer = optim.Adam(model.parameters())
     log.info("Model:\n{:s}".format(str(model)))
     if cuda:
         model.cuda()
