@@ -38,9 +38,6 @@ from autodiag.losses import nll_loss_on_mean
 
 log = logging.getLogger(__name__)
 
-def dummy():
-    print("import worked...")
-
 def create_set(X, y, inds):
     """
     X list and y nparray
@@ -224,7 +221,6 @@ def run_exp(max_recording_mins, n_recordings,
         valid_set = None
         test_set = None
 
-    set_random_seeds(seed=np_th_seed, cuda=cuda)
 
     log.info("Model:\n{:s}".format(str(model)))
     if cuda:
