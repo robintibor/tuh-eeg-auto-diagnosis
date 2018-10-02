@@ -121,8 +121,6 @@ class DiagnosisSet(object):
 
         X = []
         y = []
-        np.save('/home/schirrmr/todelete-cleanedfilenameforlukas.npy', cleaned_file_names)
-        np.save('/home/schirrmr/todelete-cleaned_labels.npy', cleaned_labels)
         n_files = len(cleaned_file_names)
         for i_fname, fname in enumerate(cleaned_file_names):
             log.info("Load {:d} of {:d}".format(i_fname + 1,n_files))
