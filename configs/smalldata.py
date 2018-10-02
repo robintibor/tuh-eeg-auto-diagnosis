@@ -78,7 +78,7 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': '/data/schirrmr/schirrmr/models/auto-diag/small-data-comparison-resampy-0.2.1/',
+        'save_folder': '/data/schirrmr/schirrmr/models/auto-diag/small-data-comparison-resampy-0.2.1-v2-ti/',
         'only_return_exp': False,
     }]
 
@@ -113,8 +113,8 @@ def get_grid_param_list():
         'duration_recording_mins': [3],
         'test_recording_mins': [None],
         'sampling_freq': [100],
-        'divisor': [None, 10], # 10 before
-        'clip_before_resample': [False],
+        'divisor': [None,], # 10 before
+        'clip_before_resample': [False, True],
     })
 
     # this differentiates train/test also.
