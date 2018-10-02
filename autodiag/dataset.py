@@ -94,8 +94,9 @@ class DiagnosisSet(object):
             lengths = np.load(
                 '/home/schirrmr/code/auto-diagnosis/sorted-recording-lengths.npy')
             mask = lengths < self.max_recording_mins * 60
-            cleaned_file_names = np.array(all_file_names)[mask]
-            cleaned_labels = labels[mask]
+            cleaned_file_names = np.array(all_file_names)[:self.n_recordings][
+                mask[:self.n_recordings]]
+            cleaned_labels = labels[:self.n_recordings][mask[:self.n_recordings]]
         else:
             cleaned_file_names = np.array(all_file_names)
             cleaned_labels = labels
@@ -103,8 +104,9 @@ class DiagnosisSet(object):
             return cleaned_labels
         X = []
         y = []
-        n_files = len(cleaned_file_names[:self.n_recordings])
-        for i_fname, fname in enumerate(cleaned_file_names[:self.n_recordings]):
+
+        n_files = len(cleaned_file_names)
+        for i_fname, fname in enumerate(cleaned_file_names):
             log.info("Load {:d} of {:d}".format(i_fname + 1,n_files))
             x = load_data(fname, preproc_functions=self.preproc_functions,
                           sensor_types=self.sensor_types)
