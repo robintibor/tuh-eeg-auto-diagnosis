@@ -60,7 +60,7 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': '/data/schirrmr/schirrmr/models/auto-diag/small-data-comparison-resampy-0.2.1/max-time-before-n-rec/',
+        'save_folder': '/data/schirrmr/schirrmr/models/auto-diag/small-data-comparison-resampy-0.2.1/max-time-ensure-n-rec/',
         'only_return_exp': False,
     }]
 

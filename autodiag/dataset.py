@@ -2,7 +2,7 @@ import logging
 import numpy as np
 
 from autoeeglukas.utils.my_io import (time_key, read_all_file_names,
-                                      get_info_with_mne)
+                                      get_info_with_mne, get_recording_length)
 
 log = logging.getLogger(__name__)
 
@@ -89,22 +89,40 @@ class DiagnosisSet(object):
             train_or_eval=self.train_or_eval)
 
         log.info("Read recording lengths...")
-        if self.max_recording_mins is not None:
-            # See https://10.5.166.73:9999/notebooks/code/auto-diagnosis/notebooks/File_Lengths.ipynb
-            lengths = np.load(
-                '/home/schirrmr/code/auto-diagnosis/sorted-recording-lengths.npy')
-            mask = lengths < self.max_recording_mins * 60
-            cleaned_file_names = np.array(all_file_names)[:self.n_recordings][
-                mask[:self.n_recordings]]
-            cleaned_labels = labels[:self.n_recordings][mask[:self.n_recordings]]
-        else:
-            cleaned_file_names = np.array(all_file_names)
-            cleaned_labels = labels
+
+        # Read files in gradually until all used or until wanted number of
+        # recordings reached
+        cleaned_file_names = []
+        cleaned_labels = []
+        i_file = 0
+        assert (self.n_recordings > 0) or (self.n_recordings is None)
+        collected_all_wanted_files = self.n_recordings == 0
+        all_files_used = False
+        while (not collected_all_wanted_files) and (not all_files_used):
+            fname = all_file_names[i_file]
+            if self.max_recording_mins is not None:
+                recording_length = get_recording_length(fname)
+            if (self.max_recording_mins is None) or (
+                recording_length < self.max_recording_mins * 60):
+                cleaned_file_names.append(fname)
+                cleaned_labels.append(labels[i_file])
+            i_file += 1
+            # also False if n_recordings is None, as expected
+            collected_all_wanted_files = (
+                self.n_recordings == len(cleaned_file_names))
+            all_files_used = i_file == len(all_file_names)
+
+        if self.n_recordings is not None:
+            assert len(cleaned_file_names) == self.n_recordings
+        assert len(cleaned_labels) == len(cleaned_file_names)
+
         if only_return_labels:
             return cleaned_labels
+
         X = []
         y = []
-
+        np.save('/home/schirrmr/todelete-cleanedfilenameforlukas.npy', cleaned_file_names)
+        np.save('/home/schirrmr/todelete-cleaned_labels.npy', cleaned_labels)
         n_files = len(cleaned_file_names)
         for i_fname, fname in enumerate(cleaned_file_names):
             log.info("Load {:d} of {:d}".format(i_fname + 1,n_files))
