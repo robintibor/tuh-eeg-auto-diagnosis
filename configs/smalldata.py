@@ -5,15 +5,9 @@ os.sys.path.insert(0, '/home/schirrmr/braindecode/code/braindecode/')
 os.sys.path.insert(0, '/home/schirrmr/code/auto-diagnosis/')
 import logging
 import time
-from copy import copy
 
 import numpy as np
-from numpy.random import RandomState
-import resampy
-from torch import optim
-import torch.nn.functional as F
 import torch as th
-from torch.nn.functional import elu
 from torch import nn
 
 from hyperoptim.parse import cartesian_dict_of_lists_product, \
@@ -23,25 +17,13 @@ from braindecode.datautil.signal_target import SignalAndTarget
 from braindecode.torch_ext.util import np_to_var
 from braindecode.torch_ext.util import set_random_seeds
 from braindecode.torch_ext.modules import Expression
-from braindecode.experiments.experiment import Experiment
-from braindecode.datautil.iterators import CropsFromTrialsIterator
-from braindecode.experiments.monitors import (RuntimeMonitor, LossMonitor,
-                                              MisclassMonitor)
-from braindecode.experiments.stopcriteria import MaxEpochs
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.util import to_dense_prediction_model
-from braindecode.datautil.iterators import get_balanced_batches
-from braindecode.datautil.splitters import concatenate_sets
-from braindecode.torch_ext.constraints import MaxNormDefaultConstraint
 from braindecode.torch_ext.util import var_to_np, confirm_gpu_availability
-from braindecode.torch_ext.functions import identity
 
-from autodiag.dataset import DiagnosisSet
-from autodiag.sgdr import CosineWithWarmRestarts, ScheduledOptimizer
 from autodiag.monitors import compute_preds_per_trial
 from autodiag.threepathnet import create_multi_start_path_net
-from autodiag.monitors import CroppedDiagnosisMonitor
 
 import importlib
 from contextlib import contextmanager
