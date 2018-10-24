@@ -32,9 +32,12 @@ def load_data(fname, preproc_functions, sensor_types=['EEG']):
         assert len(wanted_found_name) == 1
         selected_ch_names.append(wanted_found_name[0])
 
-    cnt = cnt.pick_channels(selected_ch_names)
+    cnt = cnt.reorder_channels(selected_ch_names)
+    assert np.array_equal(cnt.ch_names, selected_ch_names), (
+        "Actual chans:\n{:s}\nwanted chans:\n{:s}".format(
+            str(cnt.ch_names), str(selected_ch_names)
+        ))
 
-    assert np.array_equal(cnt.ch_names, selected_ch_names)
     n_sensors = 0
     if 'EEG' in sensor_types:
         n_sensors += 21
@@ -95,7 +98,7 @@ class DiagnosisSet(object):
         cleaned_file_names = []
         cleaned_labels = []
         i_file = 0
-        assert (self.n_recordings > 0) or (self.n_recordings is None)
+        assert (self.n_recordings is None) or (self.n_recordings > 0)
         collected_all_wanted_files = self.n_recordings == 0
         all_files_used = False
         while (not collected_all_wanted_files) and (not all_files_used):
