@@ -107,6 +107,37 @@ class TrainValidSplitter(object):
         valid_set = create_set(X, y, valid_inds)
         return train_set, valid_set
 
+def create_preproc_functions(
+        sec_to_cut_at_start, sec_to_cut_at_end, duration_recording_mins,
+        max_abs_val, clip_before_resample, sampling_freq,
+        divisor):
+    preproc_functions = []
+    if (sec_to_cut_at_start is not None) and (sec_to_cut_at_start > 0):
+        preproc_functions.append(
+            lambda data, fs: (data[:, int(sec_to_cut_at_start * fs):], fs))
+    if (sec_to_cut_at_end is not None) and (sec_to_cut_at_end > 0):
+        preproc_functions.append(
+            lambda data, fs: (data[:, :-int(sec_to_cut_at_end * fs)], fs))
+    preproc_functions.append(
+        lambda data, fs: (
+        data[:, :int(duration_recording_mins * 60 * fs)], fs))
+    if (max_abs_val is not None) and (clip_before_resample):
+        preproc_functions.append(lambda data, fs:
+                                 (np.clip(data, -max_abs_val, max_abs_val),
+                                  fs))
+
+    preproc_functions.append(lambda data, fs: (resampy.resample(data, fs,
+                                                                sampling_freq,
+                                                                axis=1,
+                                                                filter='kaiser_fast'),
+                                               sampling_freq))
+    if (max_abs_val is not None) and (not clip_before_resample):
+        preproc_functions.append(lambda data, fs:
+                                 (np.clip(data, -max_abs_val, max_abs_val),
+                                  fs))
+    if divisor is not None:
+        preproc_functions.append(lambda data, fs: (data / divisor, fs))
+    return preproc_functions
 
 def run_exp(max_recording_mins, n_recordings,
             sec_to_cut_at_start, sec_to_cut_at_end,
@@ -142,30 +173,14 @@ def run_exp(max_recording_mins, n_recordings,
         assert optimizer == 'adamw'
         assert merge_train_valid == True
 
-
-    preproc_functions = []
-    if (sec_to_cut_at_start is not None) and (sec_to_cut_at_start > 0):
-        preproc_functions.append(
-            lambda data, fs: (data[:, int(sec_to_cut_at_start * fs):], fs))
-    if (sec_to_cut_at_end is not None) and (sec_to_cut_at_end > 0):
-        preproc_functions.append(
-            lambda data, fs: (data[:, :-int(sec_to_cut_at_end * fs)], fs))
-    preproc_functions.append(
-        lambda data, fs: (data[:, :int(duration_recording_mins * 60 * fs)], fs))
-    if (max_abs_val is not None) and (clip_before_resample):
-        preproc_functions.append(lambda data, fs:
-                                 (np.clip(data, -max_abs_val, max_abs_val), fs))
-
-    preproc_functions.append(lambda data, fs: (resampy.resample(data, fs,
-                                                                sampling_freq,
-                                                                axis=1,
-                                                                filter='kaiser_fast'),
-                                               sampling_freq))
-    if (max_abs_val is not None) and (not clip_before_resample):
-        preproc_functions.append(lambda data, fs:
-                                 (np.clip(data, -max_abs_val, max_abs_val), fs))
-    if divisor is not None:
-        preproc_functions.append(lambda data, fs: (data / divisor, fs))
+    preproc_functions = create_preproc_functions(
+        sec_to_cut_at_start=sec_to_cut_at_start,
+        sec_to_cut_at_end=sec_to_cut_at_end,
+        duration_recording_mins=duration_recording_mins,
+        max_abs_val=max_abs_val,
+        clip_before_resample=clip_before_resample,
+        sampling_freq=sampling_freq,
+        divisor=divisor)
 
     dataset = DiagnosisSet(n_recordings=n_recordings,
                         max_recording_mins=max_recording_mins,
@@ -176,9 +191,15 @@ def run_exp(max_recording_mins, n_recordings,
     if test_on_eval:
         if test_recording_mins is None:
             test_recording_mins = duration_recording_mins
-        test_preproc_functions = copy(preproc_functions)
-        test_preproc_functions[1] = lambda data, fs: (
-            data[:, :int(test_recording_mins * 60 * fs)], fs)
+
+        test_preproc_functions = create_preproc_functions(
+            sec_to_cut_at_start=sec_to_cut_at_start,
+            sec_to_cut_at_end=sec_to_cut_at_end,
+            duration_recording_mins=test_recording_mins,
+            max_abs_val=max_abs_val,
+            clip_before_resample=clip_before_resample,
+            sampling_freq=sampling_freq,
+            divisor=divisor)
         test_dataset = DiagnosisSet(n_recordings=n_recordings,
                                 max_recording_mins=None,
                                 preproc_functions=test_preproc_functions,
@@ -216,6 +237,12 @@ def run_exp(max_recording_mins, n_recordings,
             # just reduce valid for faster computations
             valid_set.X = valid_set.X[:8]
             valid_set.y = valid_set.y[:8]
+            # np.save('/data/schirrmr/schirrmr/auto-diag/lukasrepr/compare/mne-0-16-2/train_X.npy', train_set.X)
+            # np.save('/data/schirrmr/schirrmr/auto-diag/lukasrepr/compare/mne-0-16-2/train_y.npy', train_set.y)
+            # np.save('/data/schirrmr/schirrmr/auto-diag/lukasrepr/compare/mne-0-16-2/valid_X.npy', valid_set.X)
+            # np.save('/data/schirrmr/schirrmr/auto-diag/lukasrepr/compare/mne-0-16-2/valid_y.npy', valid_set.y)
+            # np.save('/data/schirrmr/schirrmr/auto-diag/lukasrepr/compare/mne-0-16-2/test_X.npy', test_set.X)
+            # np.save('/data/schirrmr/schirrmr/auto-diag/lukasrepr/compare/mne-0-16-2/test_y.npy', test_set.y)
     else:
         train_set = None
         valid_set = None

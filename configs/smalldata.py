@@ -60,12 +60,12 @@ def get_templates():
 def get_grid_param_list():
     dictlistprod = cartesian_dict_of_lists_product
     default_params = [{
-        'save_folder': '/data/schirrmr/schirrmr/models/auto-diag/small-data-comparison-resampy-0.2.1/max-time-ensure-n-rec/',
+        'save_folder': '/data/schirrmr/schirrmr/models/auto-diag/small-data-comparison-resampy-0.2.1-mne-0.16.2-correct-seeds/max-time-ensure-n-rec/',
         'only_return_exp': False,
     }]
 
     seed_params = dictlistprod({
-        'np_th_seed': [0,1,2,3,4]
+        'np_th_seed': list(range(0,100))#[0,1,2,3,4]
     })
 
     save_params = [{
@@ -136,20 +136,20 @@ def get_grid_param_list():
     #     'weight_decay': 0,
     #     'merge_train_valid': False,
     # },
-    {
-        'input_time_length': 6000,
-        'final_conv_length': 35,
-        'model_name': 'shallow',
-        'n_start_chans': 40,
-        'n_chan_factor': None,
-        'model_constraint': None,
-        'stride_before_pool': None,
-        'scheduler': 'cosine',
-        'optimizer': 'adamw',
-        'learning_rate': 0.0625 * 0.01,
-        'weight_decay': 0,
-        'merge_train_valid': True,
-    },
+    # {
+    #     'input_time_length': 6000,
+    #     'final_conv_length': 35,
+    #     'model_name': 'shallow',
+    #     'n_start_chans': 40,
+    #     'n_chan_factor': None,
+    #     'model_constraint': None,
+    #     'stride_before_pool': None,
+    #     'scheduler': 'cosine',
+    #     'optimizer': 'adamw',
+    #     'learning_rate': 0.0625 * 0.01,
+    #     'weight_decay': 0,
+    #     'merge_train_valid': True,
+    # },
     {
         'input_time_length': 6000,
         'final_conv_length': 1,
